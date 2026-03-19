@@ -18,23 +18,24 @@ from scanner import SCAN_DONE, DuplicateScanner, ScanStats
 # ─────────────────────────────────────────────────────────────────────────────
 # Constants / palette
 # ─────────────────────────────────────────────────────────────────────────────
-BG_DARK      = "#1a1a2e"
-BG_PANEL     = "#16213e"
-BG_CARD      = "#0f3460"
-ACCENT_BLUE  = "#4361ee"
-ACCENT_GREEN = "#4cc9f0"
-ACCENT_RED   = "#f72585"
-ACCENT_AMBER = "#f4a261"
-TEXT_MAIN    = "#e0e0e0"
-TEXT_DIM     = "#8888aa"
+# Nord-inspired palette (comfortable, balanced)
+BG_DARK      = "#2e3440"   # Polar Night (darkest)
+BG_PANEL     = "#3b4252"   # Polar Night (darker)
+BG_CARD      = "#434c5e"   # Polar Night (dark)
+ACCENT_BLUE  = "#88c0d0"   # Frost (cyan/blue)
+ACCENT_GREEN = "#a3be8c"   # Aurora (green)
+ACCENT_RED   = "#bf616a"   # Aurora (red)
+ACCENT_AMBER = "#d08770"   # Aurora (orange)
+TEXT_MAIN    = "#eceff4"   # Snow Storm (lightest)
+TEXT_DIM     = "#d8dee9"   # Snow Storm (light)
 FONT_FAMILY  = "Segoe UI"
 
-# Action button colours
-COLOR_KEEP       = "#1a8c3f"   # deep green    — "keep" half
-COLOR_TRASH      = "#c96a10"   # deep amber    — "trash to Recycle Bin" half
-COLOR_BOTH_KEEP  = "#145c2a"   # darker green  — Keep Both
-COLOR_BOTH_TRASH = "#7a3200"   # darker amber  — Trash Both
-COLOR_PERM_DEL   = "#9b1030"   # deep crimson  — permanent delete
+# Action button colors (harmonious with Nord)
+COLOR_KEEP       = "#5e81ac"   # Nord Blue (frost deep)
+COLOR_TRASH      = "#d08770"   # Nord Orange (aurora)
+COLOR_BOTH_KEEP  = "#81a1c1"   # Nord Blue (frost lighter)
+COLOR_BOTH_TRASH = "#bf616a"   # Nord Red (aurora)
+COLOR_PERM_DEL   = "#4c566a"   # Polar Night (lighter grey)
 
 HASH_THRESHOLD  = 6           # ≤6 bits difference → duplicate
 POLL_MS         = 200         # UI queue-poll interval (ms)
@@ -79,7 +80,7 @@ class ImagePanel(tk.Frame):
     ZOOM_MIN  = 0.05   # never zoom out further than 5 % of original
     ZOOM_MAX  = 12.0   # cap at 12×
 
-    def __init__(self, master, label_text: str, **kwargs):
+    def __init__(self, master, label_text: str, rotate_hotkey: str = "", **kwargs):
         super().__init__(master, bg=BG_PANEL, **kwargs)
         self._photo   = None   # ImageTk reference (prevent GC)
         self._orig    = None   # original PIL.Image (full resolution)
@@ -102,10 +103,11 @@ class ImagePanel(tk.Frame):
             width=PREVIEW_SIZE[0],
             height=PREVIEW_SIZE[1],
             bg=BG_CARD,
-            highlightthickness=2,
-            highlightbackground=ACCENT_BLUE,
+            highlightthickness=1,
+            highlightbackground=BG_CARD,
+            relief="flat",
         )
-        self.canvas.pack(padx=10, pady=4)
+        self.canvas.pack(padx=15, pady=8)
 
         # Scroll-zoom binding (Windows: MouseWheel)
         self.canvas.bind("<MouseWheel>", self._on_scroll)
@@ -135,11 +137,40 @@ class ImagePanel(tk.Frame):
         )
         self.lbl_path.pack(pady=(0, 6))
 
+        # Rotate button
+        self.btn_rotate = tk.Button(
+            self,
+            text=f"↻ ({rotate_hotkey})" if rotate_hotkey else "↻",
+            font=(FONT_FAMILY, 12, "bold"),
+            bg=BG_PANEL,
+            fg=TEXT_MAIN,
+            relief="flat",
+            cursor="hand2",
+            command=self.rotate_image,
+        )
+        self.btn_rotate.pack(pady=(0, 6))
+        self.btn_rotate.bind("<Enter>", lambda e: self.btn_rotate.config(fg=ACCENT_BLUE))
+        self.btn_rotate.bind("<Leave>", lambda e: self.btn_rotate.config(fg=TEXT_MAIN))
+
+        # Match count label
+        self.lbl_match_count = tk.Label(
+            self,
+            text="",
+            font=(FONT_FAMILY, 9, "bold"),
+            bg=BG_PANEL,
+            fg=ACCENT_AMBER,
+            wraplength=PREVIEW_SIZE[0],
+        )
+        self.lbl_match_count.pack(pady=(0, 2))
+
+        self._path = None
+
     # ── Public API ────────────────────────────────────────────────────────
 
     def load_image(self, path: Path):
         """Load *path* and display it at fit-zoom; enables scroll-wheel zoom."""
         try:
+            self._path = path
             img = Image.open(path).convert("RGB")
             self._orig  = img
             self._zoom  = self._calc_fit_zoom()
@@ -162,12 +193,15 @@ class ImagePanel(tk.Frame):
         self.canvas.delete("all")
         self._photo = None
         self._orig  = None
+        self._path = None
         self.lbl_filename.config(text="—")
         self.lbl_path.config(text="")
+        self.lbl_match_count.config(text="")
 
     def show_placeholder(self, text: str):
         """Show a centred text message; clears any loaded image."""
         self._orig = None
+        self._path = None
         self.canvas.delete("all")
         self._photo = None
         self.canvas.create_text(
@@ -180,6 +214,28 @@ class ImagePanel(tk.Frame):
         )
         self.lbl_filename.config(text="—")
         self.lbl_path.config(text="")
+        self.lbl_match_count.config(text="")
+
+    def rotate_image(self):
+        """Rotate the current image 90 degrees clockwise and save it."""
+        if getattr(self, '_path', None) is None:
+            return
+            
+        try:
+            # Re-open original file to avoid saving over with lower quality or stripped metadata
+            with Image.open(self._path) as img:
+                rotated = img.transpose(Image.Transpose.ROTATE_270)
+                kwargs = {}
+                if "exif" in img.info:
+                    kwargs["exif"] = img.info["exif"]
+                if img.format in ["JPEG", "MPO"]:
+                    kwargs["quality"] = 95
+                rotated.save(self._path, **kwargs)
+                
+            # Re-load image into UI
+            self.load_image(self._path)
+        except Exception as e:
+            messagebox.showerror("Rotate Error", f"Could not rotate image:\n{self._path}\n\n{e}")
 
     # ── Zoom / render internals ───────────────────────────────────────────
 
@@ -306,6 +362,7 @@ class DuplicateDetectiveApp(tk.Tk):
         # Internal state
         self._scan_queue: queue.Queue = queue.Queue()
         self._stats = ScanStats()
+        self._match_counts: dict[Path, int] = {}
         self._scanner: DuplicateScanner | None = None
         self._pending_pairs: list[tuple[Path, Path]] = []
         self._current_pair: tuple[Path, Path] | None = None
@@ -316,6 +373,9 @@ class DuplicateDetectiveApp(tk.Tk):
         self._build_ui()
         self._set_review_state(active=False)
 
+        # Bind hotkeys
+        self.bind("<Key>", self._on_key_press)
+
     # ── UI construction ────────────────────────────────────────────────────
     def _build_ui(self):
         self._build_topbar()
@@ -323,7 +383,7 @@ class DuplicateDetectiveApp(tk.Tk):
         self._build_statusbar()
 
     def _build_topbar(self):
-        bar = tk.Frame(self, bg=BG_PANEL, pady=8)
+        bar = tk.Frame(self, bg=BG_PANEL, pady=12)
         bar.pack(fill="x", side="top")
 
         tk.Label(
@@ -359,22 +419,22 @@ class DuplicateDetectiveApp(tk.Tk):
 
     def _build_main_area(self):
         area = tk.Frame(self, bg=BG_DARK)
-        area.pack(fill="both", expand=True, padx=10, pady=8)
+        area.pack(fill="both", expand=True, padx=20, pady=15)
         area.columnconfigure(0, weight=3)
         area.columnconfigure(1, weight=2)
         area.columnconfigure(2, weight=3)
         area.rowconfigure(0, weight=1)
 
-        self.panel_left  = ImagePanel(area, "◀  Image 1")
+        self.panel_left  = ImagePanel(area, "◀  Image 1", rotate_hotkey="Q")
         self.panel_left.grid(row=0, column=0, sticky="nsew", padx=(0, 6))
 
         self._build_action_panel(area)
 
-        self.panel_right = ImagePanel(area, "Image 2  ▶")
+        self.panel_right = ImagePanel(area, "Image 2  ▶", rotate_hotkey="E")
         self.panel_right.grid(row=0, column=2, sticky="nsew", padx=(6, 0))
 
     def _build_action_panel(self, parent):
-        frame = tk.Frame(parent, bg=BG_PANEL, padx=12, pady=12)
+        frame = tk.Frame(parent, bg=BG_PANEL, padx=16, pady=20)
         frame.grid(row=0, column=1, sticky="nsew")
 
         tk.Label(
@@ -393,53 +453,45 @@ class DuplicateDetectiveApp(tk.Tk):
             bg=BG_PANEL,
             fg=TEXT_DIM,
         )
-        self.lbl_pair_counter.pack(pady=(0, 6))
+        self.lbl_pair_counter.pack(pady=(0, 10))
 
-        # Column orientation labels so the user can map buttons to panels
-        hdr = tk.Frame(frame, bg=BG_PANEL)
-        hdr.pack(fill="x", padx=2, pady=(0, 2))
-        tk.Label(hdr, text="◄ Image 1", font=(FONT_FAMILY, 8, "bold"),
-                 bg=BG_PANEL, fg=TEXT_DIM).pack(side="left")
-        tk.Label(hdr, text="Image 2 ►", font=(FONT_FAMILY, 8, "bold"),
-                 bg=BG_PANEL, fg=TEXT_DIM).pack(side="right")
 
         self._action_buttons: list[tk.Button] = []
-        self._split_actions: list = []   # (enabled_dict, container, l_lbl, l_bg, r_lbl, r_bg)
 
         # ── Keep Both — full-width green ─────────────────────
         btn_kb = self._make_button(
-            frame, "✅  Keep Both", self._act_keep_both,
+            frame, "✅  Keep Both (W)", self._act_keep_both,
             fg="#ffffff", bg=COLOR_BOTH_KEEP,
         )
-        btn_kb.pack(fill="x", pady=(0, 3))
+        btn_kb.pack(fill="x", padx=12, pady=(0, 8))
         self._action_buttons.append(btn_kb)
 
-        # ── Keep Left | Trash Right ─────────────────────
-        self._make_split_action(
-            frame,
-            left_text="✅ Keep\n◄ Image 1",  left_bg=COLOR_KEEP,
-            right_text="🗑 Trash\nImage 2 ►", right_bg=COLOR_TRASH,
-            command=self._act_keep_left,
-        ).pack(fill="x", pady=3)
+        # ── Keep Left (A) — full-width green ─────────────────
+        btn_kl = self._make_button(
+            frame, "✅  Keep (A)\n◄ Image 1", self._act_keep_left,
+            fg="#ffffff", bg=COLOR_KEEP,
+        )
+        btn_kl.pack(fill="x", padx=12, pady=8)
+        self._action_buttons.append(btn_kl)
 
-        # ── Trash Left | Keep Right ─────────────────────
-        self._make_split_action(
-            frame,
-            left_text="🗑 Trash\n◄ Image 1",  left_bg=COLOR_TRASH,
-            right_text="✅ Keep\nImage 2 ►", right_bg=COLOR_KEEP,
-            command=self._act_keep_right,
-        ).pack(fill="x", pady=3)
+        # ── Keep Right (D) — full-width green ────────────────
+        btn_kr = self._make_button(
+            frame, "✅  Keep (D)\nImage 2 ►", self._act_keep_right,
+            fg="#ffffff", bg=COLOR_KEEP,
+        )
+        btn_kr.pack(fill="x", padx=12, pady=8)
+        self._action_buttons.append(btn_kr)
 
         # ── Trash Both — full-width amber ──────────────────
         btn_tb = self._make_button(
-            frame, "🗑  Trash Both", self._act_trash_both,
+            frame, "🗑  Trash Both (S)", self._act_trash_both,
             fg="#ffffff", bg=COLOR_BOTH_TRASH,
         )
-        btn_tb.pack(fill="x", pady=(3, 0))
+        btn_tb.pack(fill="x", padx=12, pady=(8, 0))
         self._action_buttons.append(btn_tb)
 
         # ── Separator ────────────────────────────────────
-        tk.Frame(frame, bg=TEXT_DIM, height=1).pack(fill="x", pady=10)
+        tk.Frame(frame, bg=TEXT_DIM, height=1).pack(fill="x", pady=20)
 
         tk.Label(
             frame,
@@ -457,18 +509,18 @@ class DuplicateDetectiveApp(tk.Tk):
             del_row, "☠  Delete\n◄ Image 1", self._act_del_left,
             fg="#ffffff", bg=COLOR_PERM_DEL,
         )
-        btn_dl.pack(side="left", fill="both", expand=True, padx=(0, 2))
+        btn_dl.pack(side="left", fill="both", expand=True, padx=(12, 4))
         self._action_buttons.append(btn_dl)
 
         btn_dr = self._make_button(
             del_row, "☠  Delete\nImage 2 ►", self._act_del_right,
             fg="#ffffff", bg=COLOR_PERM_DEL,
         )
-        btn_dr.pack(side="right", fill="both", expand=True, padx=(2, 0))
+        btn_dr.pack(side="right", fill="both", expand=True, padx=(4, 12))
         self._action_buttons.append(btn_dr)
 
         # ── Similarity badge ─────────────────────────────────
-        tk.Frame(frame, bg=TEXT_DIM, height=1).pack(fill="x", pady=12)
+        tk.Frame(frame, bg=TEXT_DIM, height=1).pack(fill="x", pady=20)
         self.lbl_similarity = tk.Label(
             frame,
             text="",
@@ -480,60 +532,6 @@ class DuplicateDetectiveApp(tk.Tk):
         )
         self.lbl_similarity.pack()
 
-    def _make_split_action(
-        self, parent,
-        left_text: str, left_bg: str,
-        right_text: str, right_bg: str,
-        command,
-    ) -> tk.Frame:
-        """
-        Build a two-tone split row that acts as a SINGLE button.
-        Left and right halves are tk.Label widgets inside a tk.Frame;
-        all three widgets are bound to the same *command* so the entire
-        row is one click target.  state dict lets _set_review_state
-        enable/disable it without touching tk.Button.state.
-        """
-        enabled = {"on": True}   # mutable flag shared by all closures
-
-        container = tk.Frame(parent, bg=BG_PANEL, cursor="hand2")
-
-        left_lbl = tk.Label(
-            container, text=left_text, bg=left_bg, fg="#ffffff",
-            font=(FONT_FAMILY, 9, "bold"), padx=8, pady=9,
-            justify="center", cursor="hand2",
-        )
-        left_lbl.pack(side="left", fill="both", expand=True, padx=(0, 1))
-
-        right_lbl = tk.Label(
-            container, text=right_text, bg=right_bg, fg="#ffffff",
-            font=(FONT_FAMILY, 9, "bold"), padx=8, pady=9,
-            justify="center", cursor="hand2",
-        )
-        right_lbl.pack(side="right", fill="both", expand=True, padx=(1, 0))
-
-        def _click(e):
-            if enabled["on"]:
-                command()
-
-        def _enter(e):
-            if enabled["on"]:
-                left_lbl.config(bg=_lighten(left_bg, 25))
-                right_lbl.config(bg=_lighten(right_bg, 25))
-
-        def _leave(e):
-            left_lbl.config(bg=left_bg if enabled["on"] else _darken(left_bg))
-            right_lbl.config(bg=right_bg if enabled["on"] else _darken(right_bg))
-
-        for w in (container, left_lbl, right_lbl):
-            w.bind("<Button-1>", _click)
-            w.bind("<Enter>",   _enter)
-            w.bind("<Leave>",   _leave)
-
-        # Register for enable/disable in _set_review_state
-        self._split_actions.append(
-            (enabled, container, left_lbl, left_bg, right_lbl, right_bg)
-        )
-        return container
 
 
     def _build_statusbar(self):
@@ -548,7 +546,7 @@ class DuplicateDetectiveApp(tk.Tk):
             fg=TEXT_DIM,
             anchor="w",
         )
-        self.lbl_status.pack(side="left", padx=12)
+        self.lbl_status.pack(side="left", padx=16)
 
         self.progress_var = tk.IntVar(value=0)
         self.progressbar = ttk.Progressbar(
@@ -587,7 +585,7 @@ class DuplicateDetectiveApp(tk.Tk):
     def _make_button(parent, text, command, fg=TEXT_MAIN, bg=BG_CARD, width=None):
         kw = dict(font=(FONT_FAMILY, 9, "bold"), relief="flat", cursor="hand2",
                   activebackground=BG_DARK, fg=fg, bg=bg,
-                  padx=10, pady=7, command=command)
+                   padx=16, pady=12, command=command)
         if width:
             kw["width"] = width
         btn = tk.Button(parent, text=text, **kw)
@@ -612,6 +610,7 @@ class DuplicateDetectiveApp(tk.Tk):
             return
 
         # Reset state
+        self._match_counts.clear()
         self._pending_pairs.clear()
         self._current_pair = None
         self._scan_done = False
@@ -652,6 +651,9 @@ class DuplicateDetectiveApp(tk.Tk):
                     self._on_scan_finished()
                     return  # stop polling
                 else:
+                    a, b = item
+                    self._match_counts[a] = self._match_counts.get(a, 0) + 1
+                    self._match_counts[b] = self._match_counts.get(b, 0) + 1
                     self._pending_pairs.append(item)
                     # Load pair immediately if none being shown
                     if self._current_pair is None:
@@ -729,6 +731,12 @@ class DuplicateDetectiveApp(tk.Tk):
         self.panel_left.load_image(left_path)
         self.panel_right.load_image(right_path)
 
+        # Update match counts
+        count_left = self._match_counts.get(left_path, 1)
+        count_right = self._match_counts.get(right_path, 1)
+        self.panel_left.lbl_match_count.config(text=f"Matched with {count_left} picture(s) total")
+        self.panel_right.lbl_match_count.config(text=f"Matched with {count_right} picture(s) total")
+
         # Compute and show similarity
         sim_text = self._similarity_label(left_path, right_path)
         self.lbl_similarity.config(text=sim_text)
@@ -754,6 +762,25 @@ class DuplicateDetectiveApp(tk.Tk):
         self.lbl_similarity.config(text="")
         self._update_status(f"Scan complete — {self._pair_index} pair(s) reviewed.")
         self.progress_var.set(100)
+
+    def _on_key_press(self, event):
+        """Handle WASD keypresses for quick actions during review."""
+        if not self._current_pair:
+            return
+            
+        key = event.char.lower()
+        if key == 'w':
+            self._act_keep_both()
+        elif key == 'a':
+            self._act_keep_left()
+        elif key == 's':
+            self._act_trash_both()
+        elif key == 'd':
+            self._act_keep_right()
+        elif key == 'q':
+            self.panel_left.rotate_image()
+        elif key == 'e':
+            self.panel_right.rotate_image()
 
     # ── Action button callbacks ─────────────────────────────────────────────
     def _act_keep_both(self):
@@ -814,12 +841,6 @@ class DuplicateDetectiveApp(tk.Tk):
         state = "normal" if active else "disabled"
         for btn in self._action_buttons:
             btn.config(state=state)
-        for enabled, container, l_lbl, l_bg, r_lbl, r_bg in self._split_actions:
-            enabled["on"] = active
-            cursor = "hand2" if active else "arrow"
-            l_lbl.config(bg=l_bg if active else _darken(l_bg), cursor=cursor)
-            r_lbl.config(bg=r_bg if active else _darken(r_bg), cursor=cursor)
-            container.config(cursor=cursor)
 
     def _update_status(self, msg: str):
         self.lbl_status.config(text=msg)
