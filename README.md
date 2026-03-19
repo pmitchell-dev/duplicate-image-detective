@@ -8,22 +8,7 @@ A desktop application for Windows that recursively scans a directory for visuall
 
 ## Screenshot
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│ 📁 Directory: C:\Users\...\Pictures          [Browse] [Scan]│
-├───────────────────┬─────────────────┬───────────────────────┤
-│                   │    Actions      │                       │
-│   Image 1         │  ✅ Keep Both   │       Image 2         │
-│                   │      (W)        │                       │
-│  [image preview]  │ ─────────────  │   [image preview]     │
-│                   │  ✅ Keep Img1   │                       │
-│  filename.jpg     │      (A)        │  filename_copy.jpg    │
-│  C:\path\to\file  │  ✅ Keep Img2   │  C:\path\to\copy      │
-│                   │      (D)        │                       │
-│   ↻ (Q) Rotate    │  🗑 Trash Both  │   ↻ (E) Rotate        │
-│                   │      (S)        │                       │
-└───────────────────┴─────────────────┴───────────────────────┘
-```
+![Duplicate Image Detective](screenshots/screenshot.png)
 
 ---
 
