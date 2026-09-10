@@ -17,6 +17,9 @@ A desktop application for Windows that recursively scans a directory for visuall
 - **Recursive directory scan** — finds duplicates in all subdirectories.
 - **Perceptual hashing (pHash)** — detects visually identical images even if they differ in compression, quality, or resolution.
 - **Threaded scanner** — UI stays responsive while scanning; review pairs as they're found.
+- **Image Viewer** — seamless viewer for navigating images with half-transparent overlay arrows.
+- **Mass Edit Mode** — bulk manage tags, navigate through active selections, and easily double-click any image to jump straight to it in Image Viewer.
+- **Immich Integration** — query people directly from your Immich server and review their matched local files in Mass Edit mode.
 - **Nord-inspired UI** — A professional, comfortable dark theme that's easy on the eyes.
 - **"Loosened" Layout** — A modern, breathable design with ample padding for better focus.
 - **Scroll-wheel zoom** — hover over either image and scroll to zoom in/out, anchored to the cursor position (up to 12×).
@@ -35,6 +38,7 @@ For a lightning-fast workflow, use the following hotkeys during review:
 - **S**: Trash Both Images — move both to the Recycle Bin.
 - **Q**: Rotate Image 1 (Left) 90° clockwise.
 - **E**: Rotate Image 2 (Right) 90° clockwise.
+- **R**: Rotate current image in Image Viewer 90° clockwise.
 
 ---
 
@@ -49,6 +53,7 @@ For a lightning-fast workflow, use the following hotkeys during review:
 Pillow>=10.0.0
 imagehash>=4.3.1
 send2trash>=1.8.2
+requests>=2.31.0
 ```
 
 ---
@@ -70,13 +75,13 @@ python main.py
 ```
 
 1. Click **Browse…** and select the root directory to scan.
-2. Click **▶ Start Scan** — the scanner runs in the background.
-3. Duplicate pairs appear one at a time for review.
+2. Choose your mode: **Duplicate Scanner**, **Image Viewer**, **Mass Edit**, or **Immich Integration**.
+3. For duplicates, click **▶ Start Scan** — the scanner runs in the background. Duplicate pairs appear one at a time for review.
 4. Use the **WASDQE** hotkeys or the action buttons to manage the images.
-5. When finished, the app shows a completion message.
+5. In **Mass Edit**, use shift/ctrl clicks to select multiple items, or double click to open seamlessly in Image Viewer.
 
 ### Standalone Executable
-You can also run the pre-built `Duplicate Image Detective.exe` located in the `dist/` folder for a zero-install experience.
+You can also run the pre-built `PicCurator Studio v6.exe` located in the `dist/` folder for a zero-install experience.
 
 ---
 
@@ -84,7 +89,7 @@ You can also run the pre-built `Duplicate Image Detective.exe` located in the `d
 
 | File | Purpose |
 |---|---|
-| `main.py` | Tkinter GUI application — run this |
+| `main.py` | Tkinter GUI — quad mode (Duplicate Scanner, Image Viewer, Mass Edit, Immich Integration) |
 | `scanner.py` | Background duplicate scanner (pHash + threading) |
 | `requirements.txt` | Python dependencies |
 
