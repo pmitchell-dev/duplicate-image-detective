@@ -18,7 +18,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Install Python dependencies
 # Using a requirements inline since it's short
-RUN pip install --no-cache-dir fastapi uvicorn pydantic pillow send2trash requests
+RUN pip install --no-cache-dir fastapi uvicorn pydantic pillow send2trash requests imagehash
 
 # Copy backend source
 COPY web/backend/ /app/web/backend/
