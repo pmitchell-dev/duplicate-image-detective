@@ -76,7 +76,7 @@ def test_connection(req: BaseQuery):
     base_url = req.server_url.strip().rstrip('/')
     if not base_url.startswith("http://") and not base_url.startswith("https://"):
         base_url = "http://" + base_url
-    url = f"{base_url}/api/server-info"
+    url = f"{base_url}/api/server-info/ping"
     headers = {"Accept": "application/json"}
     if req.api_key:
         headers["x-api-key"] = req.api_key.strip()

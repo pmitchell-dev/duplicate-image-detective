@@ -33,6 +33,15 @@ function App() {
     localStorage.setItem('pic_apiKey', apiKey);
   }, [serverUrl, apiKey]);
   
+  const getNormalizedServerUrl = () => {
+    let url = serverUrl.trim().replace(/\/$/, '');
+    if (!url) return '';
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      url = 'http://' + url;
+    }
+    return url;
+  };
+  
   const handleSaveConfig = () => {
     localStorage.setItem('pic_serverUrl', serverUrl);
     localStorage.setItem('pic_apiKey', apiKey);
@@ -272,7 +281,7 @@ function App() {
                   <div className="asset-img-container" style={{ background: '#1e293b', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     {person.thumbnailPath ? (
                       <img 
-                        src={`${serverUrl.replace(/\/$/, '')}/api/people/${person.id}/thumbnail?x-api-key=${apiKey}`}
+                        src={`${getNormalizedServerUrl()}/api/people/${person.id}/thumbnail?x-api-key=${apiKey}`}
                         alt={person.name}
                         className="asset-img"
                         onError={(e) => { e.target.style.display='none'; }}
@@ -347,7 +356,7 @@ function App() {
                     </div>
                     <div className="asset-img-container">
                       <img 
-                        src={`${serverUrl.replace(/\/$/, '')}/api/assets/${asset.id}/thumbnail?size=preview&x-api-key=${apiKey}`}
+                        src={`${getNormalizedServerUrl()}/api/assets/${asset.id}/thumbnail?size=preview&x-api-key=${apiKey}`}
                         alt={asset.originalFileName}
                         className="asset-img"
                         loading="lazy"
@@ -376,7 +385,7 @@ function App() {
           onClick={() => setViewingAsset(null)}
         >
           <img 
-            src={`${serverUrl.replace(/\/$/, '')}/api/assets/${viewingAsset.id}/thumbnail?size=preview&x-api-key=${apiKey}`}
+            src={`${getNormalizedServerUrl()}/api/assets/${viewingAsset.id}/thumbnail?size=preview&x-api-key=${apiKey}`}
             style={{ maxHeight: '90vh', maxWidth: '90vw', objectFit: 'contain' }}
             alt={viewingAsset.originalFileName}
           />
