@@ -448,8 +448,9 @@ class ImagePanel(tk.Frame):
             with Image.open(self._path) as img:
                 rotated = img.transpose(Image.Transpose.ROTATE_270)
                 kwargs = {}
-                if "exif" in img.info:
-                    kwargs["exif"] = img.info["exif"]
+                for key in ["exif", "xmp", "icc_profile"]:
+                    if key in img.info:
+                        kwargs[key] = img.info[key]
                 if img.format in ["JPEG", "MPO"]:
                     kwargs["quality"] = 95
                 rotated.save(self._path, **kwargs)
@@ -2978,8 +2979,9 @@ class PicCuratorStudioApp(tk.Tk):
                 with Image.open(p) as img:
                     rotated = img.transpose(Image.Transpose.ROTATE_270)
                     kwargs = {}
-                    if "exif" in img.info:
-                        kwargs["exif"] = img.info["exif"]
+                    for key in ["exif", "xmp", "icc_profile"]:
+                        if key in img.info:
+                            kwargs[key] = img.info[key]
                     if img.format in ["JPEG", "MPO"]:
                         kwargs["quality"] = 95
                     rotated.save(p, **kwargs)
