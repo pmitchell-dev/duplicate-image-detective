@@ -1,0 +1,15 @@
+version: '3.8'
+services:
+  piccurator-web:
+    build: .
+    container_name: piccurator-web
+    ports:
+      - "8000:8000"
+    environment:
+      - TZ=America/Chicago
+    volumes:
+      # Mount the Immich library directly into the container so the app can manipulate the images.
+      # IMPORTANT: Change the left side path below to the exact absolute path where Immich stores photos on your server.
+      # The right side should perfectly match the path prefix Immich returns (typically the same if it's the exact path).
+      - /path/to/your/immich/library:/path/to/your/immich/library
+    restart: unless-stopped
