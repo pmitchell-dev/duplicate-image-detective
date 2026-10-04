@@ -548,13 +548,13 @@ def immich_get_recent_assets(server_url: str, api_key: str, limit: int = 30) -> 
             
     return False, "Could not fetch assets."
 
-def immich_smart_search(server_url: str, api_key: str, query: str, limit: int = 100) -> tuple[bool, list[dict] | str]:
+def immich_smart_search(server_url: str, api_key: str, query: str, limit: int = 250) -> tuple[bool, list[dict] | str]:
     """Search assets in Immich using the smart/AI search endpoint."""
     import urllib.parse
     q_enc = urllib.parse.quote(query)
     
     # Try GET /search/smart
-    ok, status, res = immich_request(server_url, api_key, f"/search/smart?q={q_enc}")
+    ok, status, res = immich_request(server_url, api_key, f"/search/smart?q={q_enc}&size={limit}")
     if ok:
         if isinstance(res, dict) and "assets" in res and "items" in res["assets"]:
             return True, res["assets"]["items"]
@@ -564,7 +564,7 @@ def immich_smart_search(server_url: str, api_key: str, query: str, limit: int = 
             return True, res["items"]
             
     # Try POST /search/smart
-    ok, status, res = immich_request(server_url, api_key, "/search/smart", method="POST", payload={"query": query})
+    ok, status, res = immich_request(server_url, api_key, "/search/smart", method="POST", payload={"query": query, "size": limit})
     if ok:
         if isinstance(res, dict) and "assets" in res and "items" in res["assets"]:
             return True, res["assets"]["items"]
@@ -574,7 +574,7 @@ def immich_smart_search(server_url: str, api_key: str, query: str, limit: int = 
             return True, res["items"]
             
     # Try POST /search/metadata as fallback
-    ok, status, res = immich_request(server_url, api_key, "/search/metadata", method="POST", payload={"q": query, "withMetadata": True})
+    ok, status, res = immich_request(server_url, api_key, "/search/metadata", method="POST", payload={"q": query, "withMetadata": True, "size": limit})
     if ok:
         if isinstance(res, dict) and "assets" in res and "items" in res["assets"]:
             return True, res["assets"]["items"]

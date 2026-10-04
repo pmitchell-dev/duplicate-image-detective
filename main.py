@@ -13,7 +13,7 @@ import tkinter as tk
 import urllib.error
 import urllib.request
 from pathlib import Path
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox, ttk, simpledialog
 
 from PIL import Image, ImageDraw, ImageTk
 
@@ -41,6 +41,22 @@ from scanner import (
     immich_upload_asset,
 )
 
+
+TAG_CATEGORIES = {
+    "Names": [
+        "Dorothy Law", "Eoin Davis", "Greg Mitchell", "Kathy Mitchell", 
+        "Kristie Davis", "Kristie Mitchell", "Larry Mitchell", "Lucais Davis", 
+        "Matthew Davis", "Patrick", "Patrick Mitchell", "Ron Mitchell", 
+        "Ruth Mitchell", "Stacy Mitchell", "Ted Law", "Tiffany Mitchell", 
+        "Tim Mitchell", "Victoria Mitchell"
+    ],
+    "Description": [
+        "Birthday", "Cards", "Christmas", "Parade", 
+        "Photo Shoot", "School Pictures", "Vacation", "Wedding"
+    ],
+    "Location": ["Mackinac Island"],
+    "Year": []
+}
 
 def test_immich_connection(server_url: str, api_key: str) -> tuple[bool, str]:
     """
@@ -781,6 +797,31 @@ class ChopImageDialog(tk.Toplevel):
         self.on_success(new_files)
         self.destroy()
 
+
+
+def get_tag_categories_file() -> Path:
+    return get_app_dir() / "tag_categories.json"
+
+def load_tag_categories():
+    f = get_tag_categories_file()
+    if f.exists():
+        try:
+            with open(f, "r", encoding="utf-8") as file:
+                data = json.load(file)
+                if isinstance(data, dict):
+                    TAG_CATEGORIES.clear()
+                    TAG_CATEGORIES.update(data)
+        except Exception:
+            pass
+
+def save_tag_categories():
+    f = get_tag_categories_file()
+    try:
+        with open(f, "w", encoding="utf-8") as file:
+            json.dump(TAG_CATEGORIES, file, indent=2)
+    except Exception:
+        pass
+
 class DuplicateDetectiveApp(tk.Tk):
 
     def __init__(self):
@@ -855,6 +896,7 @@ class DuplicateDetectiveApp(tk.Tk):
 
         # Load persisted Immich config if present (immich_config.json)
         self._load_immich_config()
+        load_tag_categories()
 
         # Save config automatically whenever connection or path fields change
         self.var_immich_url.trace_add("write", lambda *args: self._save_immich_config())
@@ -867,6 +909,92 @@ class DuplicateDetectiveApp(tk.Tk):
 
         # Bind hotkeys
         self.bind("<Key>", self._on_key_press)
+
+    def _prompt_new_category(self):
+        new_cat = simpledialog.askstring("New Category", "Category Name:", parent=self)
+        if new_cat:
+            new_cat = new_cat.strip()
+            if new_cat and new_cat not in TAG_CATEGORIES and new_cat != "Other":
+                TAG_CATEGORIES[new_cat] = []
+                save_tag_categories()
+                self._fv_refresh_known_keywords_ui()
+                self._me_refresh_sidebar_ui()
+
+    def _delete_category(self, cat: str):
+        if messagebox.askyesno("Delete Category", f"Delete category '{cat}'?\n\nTags in this category will be moved to 'Other'.", parent=self):
+            if cat in TAG_CATEGORIES:
+                del TAG_CATEGORIES[cat]
+                save_tag_categories()
+                self._fv_refresh_known_keywords_ui()
+                self._me_refresh_sidebar_ui()
+                
+    def _delete_known_tag(self, tag: str):
+        if messagebox.askyesno("Delete Tag", f"Delete tag '{tag}' entirely from known tags?", parent=self):
+            if tag in self._known_keywords:
+                self._known_keywords.remove(tag)
+            for k in TAG_CATEGORIES:
+                if tag in TAG_CATEGORIES[k]:
+                    TAG_CATEGORIES[k].remove(tag)
+            self._save_immich_config()
+            save_tag_categories()
+            self._fv_refresh_known_keywords_ui()
+            self._me_refresh_sidebar_ui()
+
+    def _show_tag_context_menu(self, event, tag: str, mode: str):
+        menu = tk.Menu(self, tearoff=0)
+        
+        move_menu = tk.Menu(menu, tearoff=0)
+        move_menu.add_command(label="➕ New Category...", command=lambda: self._move_tag_to_new_cat(tag))
+        move_menu.add_separator()
+        
+        current_cat = "Other"
+        for c, kws in TAG_CATEGORIES.items():
+            if tag in kws:
+                current_cat = c
+                break
+                
+        cats = list(TAG_CATEGORIES.keys())
+        if "Other" not in cats:
+            cats.append("Other")
+            
+        for c in cats:
+            if c != current_cat:
+                move_menu.add_command(label=c, command=lambda c_target=c: self._move_tag_to_cat(tag, c_target))
+                
+        menu.add_cascade(label="➔ Move to...", menu=move_menu)
+        menu.add_separator()
+        menu.add_command(label="🗑️ Delete Tag", command=lambda: self._delete_known_tag(tag))
+        
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            menu.grab_release()
+
+    def _move_tag_to_cat(self, tag: str, target_cat: str):
+        for k in TAG_CATEGORIES:
+            if tag in TAG_CATEGORIES[k]:
+                TAG_CATEGORIES[k].remove(tag)
+        if target_cat != "Other":
+            if target_cat not in TAG_CATEGORIES:
+                TAG_CATEGORIES[target_cat] = []
+            TAG_CATEGORIES[target_cat].append(tag)
+            
+        save_tag_categories()
+        self._fv_refresh_known_keywords_ui()
+        self._me_refresh_sidebar_ui()
+
+    def _move_tag_to_new_cat(self, tag: str):
+        new_cat = simpledialog.askstring("New Category", "Category Name:", parent=self)
+        if new_cat:
+            new_cat = new_cat.strip()
+            if new_cat and new_cat not in TAG_CATEGORIES and new_cat != "Other":
+                TAG_CATEGORIES[new_cat] = [tag]
+                for k in TAG_CATEGORIES:
+                    if k != new_cat and tag in TAG_CATEGORIES[k]:
+                        TAG_CATEGORIES[k].remove(tag)
+                save_tag_categories()
+                self._fv_refresh_known_keywords_ui()
+                self._me_refresh_sidebar_ui()
 
     def _load_immich_config(self):
         cfg_file = get_immich_config_file()
@@ -1425,6 +1553,12 @@ class DuplicateDetectiveApp(tk.Tk):
         )
         btn_rot.pack(fill="x", pady=(0, 10))
 
+        btn_trash = self._make_button(
+            sidebar, "🗑  Send to Trash (Del)", self._fv_trash,
+            fg="#ffffff", bg=COLOR_TRASH
+        )
+        btn_trash.pack(fill="x", pady=(0, 10))
+
         # ── INLINE TAG & KEYWORD MANAGER CARD ─────────────────────
         card_tags = tk.Frame(sidebar, bg=BG_CARD, padx=12, pady=10)
         card_tags.pack(fill="x", pady=(0, 10))
@@ -1514,25 +1648,25 @@ class DuplicateDetectiveApp(tk.Tk):
         self.frame_fv_known_keywords_container = tk.Frame(card_tags, bg=BG_CARD)
         self.frame_fv_known_keywords_container.pack(fill="x", pady=(6, 0))
 
+        hdr_row = tk.Frame(self.frame_fv_known_keywords_container, bg=BG_CARD)
+        hdr_row.pack(fill="x", pady=(0, 4))
+        
         tk.Label(
-            self.frame_fv_known_keywords_container,
+            hdr_row,
             text="Universal App Tags:",
             font=(FONT_FAMILY, 8, "bold"),
             bg=BG_CARD,
             fg=TEXT_DIM,
-        ).pack(anchor="w", pady=(0, 4))
+        ).pack(side="left")
+
+        btn_add_cat = tk.Button(
+            hdr_row, text="➕ Cat", font=(FONT_FAMILY, 7, "bold"), bg=BG_PANEL, fg=ACCENT_GREEN,
+            command=self._prompt_new_category
+        )
+        btn_add_cat.pack(side="right")
 
         self.frame_fv_known_keywords = tk.Frame(self.frame_fv_known_keywords_container, bg=BG_CARD)
         self.frame_fv_known_keywords.pack(fill="x")
-
-        # Separator & Single Delete button at bottom away from everything
-        tk.Frame(sidebar, bg=TEXT_DIM, height=1).pack(fill="x", pady=(15, 12))
-
-        btn_trash = self._make_button(
-            sidebar, "🗑  Send to Trash (Del)", self._fv_trash,
-            fg="#ffffff", bg=COLOR_TRASH
-        )
-        btn_trash.pack(fill="x")
 
     def _build_statusbar(self):
         bar = tk.Frame(self, bg=BG_PANEL, pady=4)
@@ -1952,34 +2086,56 @@ class DuplicateDetectiveApp(tk.Tk):
             lbl.pack(anchor="w")
             return
 
-        current_row = tk.Frame(self.frame_fv_known_keywords, bg=BG_CARD)
-        current_row.pack(fill="x", pady=1)
-        current_char_count = 0
-
+        categorized = {k: [] for k in TAG_CATEGORIES}
+        categorized["Other"] = []
         for kw in available:
-            chip_text = f"+ {kw}"
-            chip_len = len(chip_text) + 2
-            if current_char_count > 0 and current_char_count + chip_len > 28:
-                current_row = tk.Frame(self.frame_fv_known_keywords, bg=BG_CARD)
-                current_row.pack(fill="x", pady=1)
-                current_char_count = 0
+            found = False
+            for cat, kws in TAG_CATEGORIES.items():
+                if kw in kws:
+                    categorized[cat].append(kw)
+                    found = True
+                    break
+            if not found:
+                categorized["Other"].append(kw)
 
-            btn = tk.Button(
-                current_row,
-                text=chip_text,
-                font=(FONT_FAMILY, 7, "bold"),
-                bg=BG_PANEL,
-                fg=ACCENT_GREEN,
-                activebackground=ACCENT_BLUE,
-                activeforeground=BG_DARK,
-                relief="flat",
-                cursor="hand2",
-                padx=4,
-                pady=1,
-                command=lambda t=kw: self._fv_add_tag(t),
-            )
-            btn.pack(side="left", padx=2, pady=2)
-            current_char_count += chip_len
+        for cat, keywords in categorized.items():
+            lbl_cat = tk.Label(self.frame_fv_known_keywords, text=cat, font=(FONT_FAMILY, 7, "bold"), bg=BG_CARD, fg=TEXT_DIM)
+            lbl_cat.pack(anchor="w", pady=(6, 2))
+            lbl_cat.cat_name = cat
+            lbl_cat.bind("<Button-3>", lambda e, c=cat: self._delete_category(c))
+
+            current_row = tk.Frame(self.frame_fv_known_keywords, bg=BG_CARD)
+            current_row.pack(fill="x", pady=1)
+            current_row.cat_name = cat
+            current_char_count = 0
+
+            for kw in keywords:
+                chip_text = f"+ {kw}"
+                chip_len = len(chip_text) + 2
+                if current_char_count > 0 and current_char_count + chip_len > 75:
+                    current_row = tk.Frame(self.frame_fv_known_keywords, bg=BG_CARD)
+                    current_row.pack(fill="x", pady=1)
+                    current_row.cat_name = cat
+                    current_char_count = 0
+
+                btn = tk.Button(
+                    current_row,
+                    text=chip_text,
+                    font=(FONT_FAMILY, 7, "bold"),
+                    bg=BG_PANEL,
+                    fg=ACCENT_GREEN,
+                    activebackground=ACCENT_BLUE,
+                    activeforeground=BG_DARK,
+                    relief="flat",
+                    cursor="hand2",
+                    padx=4,
+                    pady=1,
+                    command=lambda t=kw: self._fv_add_tag(t),
+                )
+                btn.pack(side="left", padx=2, pady=2)
+                btn.cat_name = cat
+                btn.bind("<Button-3>", lambda e, t=kw: self._show_tag_context_menu(e, t, "fv"))
+                current_char_count += chip_len
 
     def _fv_add_tag(self, tag: str):
         cleaned = tag.strip()
@@ -2050,7 +2206,7 @@ class DuplicateDetectiveApp(tk.Tk):
         for kw in matches[:6]:
             self.listbox_fv_suggestions.insert(tk.END, kw)
 
-        self.frame_fv_suggestions.pack(fill="x", pady=(4, 0))
+        self.frame_fv_suggestions.pack(fill="x", pady=(4, 0), before=self.frame_fv_known_keywords_container)
 
     def _fv_hide_tag_suggestions(self):
         self.frame_fv_suggestions.pack_forget()
@@ -2335,13 +2491,22 @@ class DuplicateDetectiveApp(tk.Tk):
         self.frame_me_known_keywords_container = tk.Frame(card_tags, bg=BG_CARD)
         self.frame_me_known_keywords_container.pack(fill="x", pady=(6, 0))
 
+        hdr_row_me = tk.Frame(self.frame_me_known_keywords_container, bg=BG_CARD)
+        hdr_row_me.pack(fill="x", pady=(0, 4))
+        
         tk.Label(
-            self.frame_me_known_keywords_container,
+            hdr_row_me,
             text="Universal App Tags:",
             font=(FONT_FAMILY, 8, "bold"),
             bg=BG_CARD,
             fg=TEXT_DIM,
-        ).pack(anchor="w", pady=(0, 4))
+        ).pack(side="left")
+
+        btn_add_cat_me = tk.Button(
+            hdr_row_me, text="➕ Cat", font=(FONT_FAMILY, 7, "bold"), bg=BG_PANEL, fg=ACCENT_GREEN,
+            command=self._prompt_new_category
+        )
+        btn_add_cat_me.pack(side="right")
 
         self.frame_me_known_keywords = tk.Frame(self.frame_me_known_keywords_container, bg=BG_CARD)
         self.frame_me_known_keywords.pack(fill="x")
@@ -2662,34 +2827,56 @@ class DuplicateDetectiveApp(tk.Tk):
             )
             lbl.pack(anchor="w")
         else:
-            current_row = tk.Frame(self.frame_me_known_keywords, bg=BG_CARD)
-            current_row.pack(fill="x", pady=1)
-            current_char_count = 0
-
+            categorized = {k: [] for k in TAG_CATEGORIES}
+            categorized["Other"] = []
             for kw in available:
-                chip_text = f"+ {kw}"
-                chip_len = len(chip_text) + 2
-                if current_char_count > 0 and current_char_count + chip_len > 28:
-                    current_row = tk.Frame(self.frame_me_known_keywords, bg=BG_CARD)
-                    current_row.pack(fill="x", pady=1)
-                    current_char_count = 0
+                found = False
+                for cat, kws in TAG_CATEGORIES.items():
+                    if kw in kws:
+                        categorized[cat].append(kw)
+                        found = True
+                        break
+                if not found:
+                    categorized["Other"].append(kw)
 
-                btn = tk.Button(
-                    current_row,
-                    text=chip_text,
-                    font=(FONT_FAMILY, 7, "bold"),
-                    bg=BG_PANEL,
-                    fg=ACCENT_GREEN,
-                    activebackground=ACCENT_BLUE,
-                    activeforeground=BG_DARK,
-                    relief="flat",
-                    cursor="hand2",
-                    padx=4,
-                    pady=1,
-                    command=lambda t=kw: self._me_add_tag_to_selected(t),
-                )
-                btn.pack(side="left", padx=2, pady=2)
-                current_char_count += chip_len
+            for cat, keywords in categorized.items():
+                lbl_cat = tk.Label(self.frame_me_known_keywords, text=cat, font=(FONT_FAMILY, 7, "bold"), bg=BG_CARD, fg=TEXT_DIM)
+                lbl_cat.pack(anchor="w", pady=(6, 2))
+                lbl_cat.cat_name = cat
+                lbl_cat.bind("<Button-3>", lambda e, c=cat: self._delete_category(c))
+
+                current_row = tk.Frame(self.frame_me_known_keywords, bg=BG_CARD)
+                current_row.pack(fill="x", pady=1)
+                current_row.cat_name = cat
+                current_char_count = 0
+
+                for kw in keywords:
+                    chip_text = f"+ {kw}"
+                    chip_len = len(chip_text) + 2
+                    if current_char_count > 0 and current_char_count + chip_len > 75:
+                        current_row = tk.Frame(self.frame_me_known_keywords, bg=BG_CARD)
+                        current_row.pack(fill="x", pady=1)
+                        current_row.cat_name = cat
+                        current_char_count = 0
+
+                    btn = tk.Button(
+                        current_row,
+                        text=chip_text,
+                        font=(FONT_FAMILY, 7, "bold"),
+                        bg=BG_PANEL,
+                        fg=ACCENT_GREEN,
+                        activebackground=ACCENT_BLUE,
+                        activeforeground=BG_DARK,
+                        relief="flat",
+                        cursor="hand2",
+                        padx=4,
+                        pady=1,
+                        command=lambda t=kw: self._me_add_tag_to_selected(t),
+                    )
+                    btn.pack(side="left", padx=2, pady=2)
+                    btn.cat_name = cat
+                    btn.bind("<Button-3>", lambda e, t=kw: self._show_tag_context_menu(e, t, "me"))
+                    current_char_count += chip_len
 
     def _me_add_tag_to_selected(self, tag: str):
         cleaned = tag.strip()
@@ -2765,7 +2952,7 @@ class DuplicateDetectiveApp(tk.Tk):
         for kw in matches[:6]:
             self.listbox_me_suggestions.insert(tk.END, kw)
 
-        self.frame_me_suggestions.pack(fill="x", pady=(4, 0))
+        self.frame_me_suggestions.pack(fill="x", pady=(4, 0), before=self.frame_me_known_keywords_container)
 
     def _me_hide_tag_suggestions(self):
         self.frame_me_suggestions.pack_forget()
