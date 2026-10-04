@@ -641,7 +641,7 @@ class ChopImageDialog(tk.Toplevel):
         lbl_hint = tk.Label(top_bar, text="Draw rectangles around the areas to extract. Each rectangle will become a new image.", bg=BG_DARK, fg=TEXT_DIM, font=(FONT_FAMILY, 9))
         lbl_hint.pack(side="left", padx=15)
         
-        self.canvas = tk.Canvas(self, bg=BG_DARK_ALT, highlightthickness=0)
+        self.canvas = tk.Canvas(self, bg=BG_CARD, highlightthickness=0)
         self.canvas.pack(fill="both", expand=True, padx=10, pady=10)
         
         self.canvas.bind("<ButtonPress-1>", self.on_press)
