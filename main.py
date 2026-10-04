@@ -619,6 +619,7 @@ class ChopImageDialog(tk.Toplevel):
             # Ensure orientation is preserved if possible
             if hasattr(self.orig_image, '_getexif'):
                 self.orig_image = self._apply_exif_orientation(self.orig_image)
+            self.display_image = self.orig_image.convert("RGB")
         except Exception as e:
             messagebox.showerror("Error", f"Failed to open image:\n{e}", parent=self)
             self.destroy()
@@ -669,7 +670,10 @@ class ChopImageDialog(tk.Toplevel):
         return img
 
     def on_resize(self, event):
-        pass # Optional: debounce resize to redraw
+        if event.widget == self.canvas:
+            if hasattr(self, '_resize_timer'):
+                self.after_cancel(self._resize_timer)
+            self._resize_timer = self.after(150, self.update_image_display)
 
     def update_image_display(self):
         cw, ch = self.canvas.winfo_width(), self.canvas.winfo_height()
@@ -677,7 +681,7 @@ class ChopImageDialog(tk.Toplevel):
             self.after(100, self.update_image_display)
             return
             
-        ow, oh = self.orig_image.size
+        ow, oh = self.display_image.size
         ratio = min(cw / ow, ch / oh)
         self.scale_factor = ratio
         
@@ -690,7 +694,7 @@ class ChopImageDialog(tk.Toplevel):
         except AttributeError:
             resample_filter = Image.LANCZOS
             
-        resized = self.orig_image.resize((nw, nh), resample_filter)
+        resized = self.display_image.resize((nw, nh), resample_filter)
         self.tk_img = ImageTk.PhotoImage(resized)
         
         self.img_x = (cw - nw) // 2
