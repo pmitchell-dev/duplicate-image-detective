@@ -586,6 +586,181 @@ class ImagePanel(tk.Frame):
 # ─────────────────────────────────────────────────────────────────────────────
 # Main application window
 # ─────────────────────────────────────────────────────────────────────────────
+class ChopImageDialog(tk.Toplevel):
+    def __init__(self, parent, image_path: Path, on_success):
+        super().__init__(parent)
+        self.title("Chop Image - Drag to draw rectangles")
+        self.geometry("1000x800")
+        self.configure(bg=BG_DARK)
+        self.image_path = image_path
+        self.on_success = on_success
+        self.rects = []
+        self.current_rect = None
+        self.start_x = None
+        self.start_y = None
+        
+        try:
+            self.orig_image = Image.open(image_path)
+            # Ensure orientation is preserved if possible
+            if hasattr(self.orig_image, '_getexif'):
+                self.orig_image = self._apply_exif_orientation(self.orig_image)
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to open image:\n{e}", parent=self)
+            self.destroy()
+            return
+            
+        # UI Setup
+        top_bar = tk.Frame(self, bg=BG_DARK, height=50)
+        top_bar.pack(fill="x", pady=5)
+        
+        btn_save = tk.Button(top_bar, text="✂ Save Chops", command=self.save_chops, bg=COLOR_BOTH_KEEP, fg="white", font=(FONT_FAMILY, 10, "bold"))
+        btn_save.pack(side="left", padx=10)
+        
+        btn_clear = tk.Button(top_bar, text="Clear Last", command=self.clear_last, bg=COLOR_TRASH, fg="white", font=(FONT_FAMILY, 10))
+        btn_clear.pack(side="left", padx=10)
+
+        btn_clear_all = tk.Button(top_bar, text="Clear All", command=self.clear_all, bg=COLOR_TRASH, fg="white", font=(FONT_FAMILY, 10))
+        btn_clear_all.pack(side="left", padx=10)
+        
+        lbl_hint = tk.Label(top_bar, text="Draw rectangles around the areas to extract. Each rectangle will become a new image.", bg=BG_DARK, fg=TEXT_DIM, font=(FONT_FAMILY, 9))
+        lbl_hint.pack(side="left", padx=15)
+        
+        self.canvas = tk.Canvas(self, bg=BG_DARK_ALT, highlightthickness=0)
+        self.canvas.pack(fill="both", expand=True, padx=10, pady=10)
+        
+        self.canvas.bind("<ButtonPress-1>", self.on_press)
+        self.canvas.bind("<B1-Motion>", self.on_drag)
+        self.canvas.bind("<ButtonRelease-1>", self.on_release)
+        self.bind("<Configure>", self.on_resize)
+        
+        self.tk_img = None
+        self.scale_factor = 1.0
+        self.img_x = 0
+        self.img_y = 0
+        
+        # After initial size is set, display image
+        self.after(200, self.update_image_display)
+
+    def _apply_exif_orientation(self, img: Image.Image) -> Image.Image:
+        try:
+            exif = img._getexif()
+            if exif:
+                orientation = exif.get(274)
+                if orientation == 3: img = img.rotate(180, expand=True)
+                elif orientation == 6: img = img.rotate(270, expand=True)
+                elif orientation == 8: img = img.rotate(90, expand=True)
+        except:
+            pass
+        return img
+
+    def on_resize(self, event):
+        pass # Optional: debounce resize to redraw
+
+    def update_image_display(self):
+        cw, ch = self.canvas.winfo_width(), self.canvas.winfo_height()
+        if cw < 10 or ch < 10:
+            self.after(100, self.update_image_display)
+            return
+            
+        ow, oh = self.orig_image.size
+        ratio = min(cw / ow, ch / oh)
+        self.scale_factor = ratio
+        
+        nw, nh = int(ow * ratio), int(oh * ratio)
+        if nw == 0 or nh == 0:
+            return
+            
+        try:
+            resample_filter = Image.Resampling.LANCZOS
+        except AttributeError:
+            resample_filter = Image.LANCZOS
+            
+        resized = self.orig_image.resize((nw, nh), resample_filter)
+        self.tk_img = ImageTk.PhotoImage(resized)
+        
+        self.img_x = (cw - nw) // 2
+        self.img_y = (ch - nh) // 2
+        
+        self.canvas.delete("all")
+        self.canvas.create_image(self.img_x, self.img_y, anchor="nw", image=self.tk_img)
+        self.redraw_rects()
+
+    def redraw_rects(self):
+        # Clear existing
+        self.canvas.delete("rect")
+        for x0, y0, x1, y1 in self.rects:
+            sx0 = self.img_x + x0 * self.scale_factor
+            sy0 = self.img_y + y0 * self.scale_factor
+            sx1 = self.img_x + x1 * self.scale_factor
+            sy1 = self.img_y + y1 * self.scale_factor
+            self.canvas.create_rectangle(sx0, sy0, sx1, sy1, outline=ACCENT_GREEN, width=3, tags="rect")
+            
+    def on_press(self, event):
+        self.start_x = event.x
+        self.start_y = event.y
+        self.current_rect = self.canvas.create_rectangle(self.start_x, self.start_y, self.start_x, self.start_y, outline="red", width=2)
+        
+    def on_drag(self, event):
+        if self.current_rect:
+            self.canvas.coords(self.current_rect, self.start_x, self.start_y, event.x, event.y)
+            
+    def on_release(self, event):
+        if self.current_rect:
+            x0, y0, x1, y1 = self.start_x, self.start_y, event.x, event.y
+            x0, x1 = sorted([x0, x1])
+            y0, y1 = sorted([y0, y1])
+            
+            # Convert to original image coordinates
+            ox0 = max(0, int((x0 - self.img_x) / self.scale_factor))
+            oy0 = max(0, int((y0 - self.img_y) / self.scale_factor))
+            ox1 = min(self.orig_image.width, int((x1 - self.img_x) / self.scale_factor))
+            oy1 = min(self.orig_image.height, int((y1 - self.img_y) / self.scale_factor))
+            
+            # Only add if area is significant
+            if ox1 - ox0 > 10 and oy1 - oy0 > 10:
+                self.rects.append((ox0, oy0, ox1, oy1))
+                
+            self.canvas.delete(self.current_rect)
+            self.current_rect = None
+            self.redraw_rects()
+
+    def clear_last(self):
+        if self.rects:
+            self.rects.pop()
+            self.redraw_rects()
+            
+    def clear_all(self):
+        self.rects.clear()
+        self.redraw_rects()
+        
+    def save_chops(self):
+        if not self.rects:
+            messagebox.showinfo("No Chops", "Please draw at least one rectangle to chop the image.", parent=self)
+            return
+        
+        new_files = []
+        for i, (x0, y0, x1, y1) in enumerate(self.rects):
+            crop = self.orig_image.crop((x0, y0, x1, y1))
+            name = f"{self.image_path.stem}_chop_{i+1}{self.image_path.suffix}"
+            out_path = self.image_path.parent / name
+            
+            # Avoid overwriting existing chops if multiple chops are done from the same original
+            counter = 1
+            while out_path.exists():
+                name = f"{self.image_path.stem}_chop_{i+1}_{counter}{self.image_path.suffix}"
+                out_path = self.image_path.parent / name
+                counter += 1
+                
+            try:
+                info = self.orig_image.info
+                crop.save(out_path, **info)
+            except:
+                crop.save(out_path)
+            new_files.append(out_path)
+            
+        self.on_success(new_files)
+        self.destroy()
+
 class DuplicateDetectiveApp(tk.Tk):
 
     def __init__(self):
@@ -1213,6 +1388,13 @@ class DuplicateDetectiveApp(tk.Tk):
         self.lbl_fv_info_size.pack(fill="x", pady=2)
 
 
+
+        # Chop row
+        btn_chop = self._make_button(
+            sidebar, "✂  Chop Image (C)", self._fv_chop,
+            fg="#ffffff", bg=ACCENT_BLUE
+        )
+        btn_chop.pack(fill="x", pady=(0, 10))
 
         # Rotate row
         btn_rot = self._make_button(
@@ -1879,6 +2061,21 @@ class DuplicateDetectiveApp(tk.Tk):
         if self._fv_active_images:
             self._fv_index = len(self._fv_active_images) - 1
             self._fv_show_current()
+
+    def _fv_chop(self):
+        if not self._fv_active_images:
+            return
+        path = self._fv_active_images[self._fv_index]
+        
+        def on_chop_success(new_files):
+            # Insert the new files immediately after the current image
+            for i, new_path in enumerate(new_files):
+                self._fv_active_images.insert(self._fv_index + 1 + i, new_path)
+            messagebox.showinfo("Chop Success", f"Successfully extracted {len(new_files)} image(s).")
+            # Update folder list UI if necessary (just refresh current view)
+            self._fv_show_current()
+            
+        ChopImageDialog(self, path, on_chop_success)
 
     def _fv_rotate(self):
         if not self._fv_active_images:
@@ -3531,6 +3728,8 @@ class DuplicateDetectiveApp(tk.Tk):
                 self._fv_next()
             elif char in ('r', 'q', 'e'):
                 self._fv_rotate()
+            elif char == 'c':
+                self._fv_chop()
             elif keysym in ('Delete', 'BackSpace') or char == 's':
                 self._fv_trash()
             elif keysym == 'Home':
@@ -3685,11 +3884,14 @@ if __name__ == "__main__":
 
     # Centre on screen
     app.update_idletasks()
-    w, h = 1300, 780
     sw = app.winfo_screenwidth()
     sh = app.winfo_screenheight()
+    w = int(sw * 0.85)
+    h = int(sh * 0.85)
     x = (sw - w) // 2
     y = (sh - h) // 2
     app.geometry(f"{w}x{h}+{x}+{y}")
+    
+    app.state("zoomed")
 
     app.mainloop()
