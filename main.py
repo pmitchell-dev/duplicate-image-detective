@@ -292,7 +292,8 @@ class ImagePanel(tk.Frame):
             highlightbackground=BG_CARD,
             relief="flat",
         )
-        self.canvas.pack(padx=15, pady=8)
+        self.canvas.pack(padx=15, pady=8, fill="both", expand=True)
+        self.canvas.bind("<Configure>", self._on_resize)
 
         # Scroll-zoom binding (Windows: MouseWheel)
         self.canvas.bind("<MouseWheel>", self._on_scroll)
@@ -350,7 +351,21 @@ class ImagePanel(tk.Frame):
 
         self._path = None
 
+    def _on_resize(self, event):
+        """Handle canvas resize to update preview bounds and re-center."""
+        if event.widget == self.canvas:
+            new_size = (event.width, event.height)
+            if new_size != self.preview_size and event.width > 10 and event.height > 10:
+                self.preview_size = new_size
+                if self._orig:
+                    # Maintain fit on resize if zoomed all the way out, otherwise preserve zoom
+                    # Actually, re-calculating fit zoom is usually desired when maximizing
+                    self._zoom = self._calc_fit_zoom()
+                    self._pan_x, self._pan_y = self._calc_centered_pan()
+                    self._render()
+
     # ── Public API ────────────────────────────────────────────────────────
+
 
     def load_image(self, path: Path):
         """Load *path* and display it at fit-zoom; enables scroll-wheel zoom."""
