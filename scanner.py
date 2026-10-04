@@ -1,5 +1,5 @@
 """
-scanner.py — Background duplicate image scanner for Duplicate Image Detective.
+scanner.py — Background duplicate image scanner for picCurator Studio.
 
 Uses perceptual hashing (pHash) to find visually identical images even if
 they differ in file format, compression, or metadata.

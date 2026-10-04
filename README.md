@@ -1,4 +1,4 @@
-# Duplicate Image Detective 🔍
+# picCurator Studio 🔍
 
 > **✨ Vibe coded** — This project was built entirely through conversational AI-assisted development (vibe coding) using [Antigravity by Google DeepMind](https://deepmind.google). No manual code was written.
 
@@ -8,7 +8,7 @@ A desktop application for Windows that recursively scans a directory for visuall
 
 ## Screenshot
 
-![Duplicate Image Detective](screenshots/screenshot.png)
+![picCurator Studio](screenshots/screenshot.png)
 
 ---
 

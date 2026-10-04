@@ -25,7 +25,7 @@ Recursively scans image directories for visually duplicate photos using perceptu
 | `main.py` | Tkinter GUI — quad mode (Duplicate Scanner, Image Viewer, Mass Edit, Immich Integration) |
 | `scanner.py` | Threaded scanner, folder image collector, EXIF (`XPKeywords` `0x9C9E`) & Immich XMP tag read/write engine |
 | `requirements.txt` | Python dependencies |
-| `Duplicate Image Detective.spec` | PyInstaller build specification (outputs `PicCurator Studio v5.exe`) |
+| `picCurator Studio.spec` | PyInstaller build specification (outputs `PicCurator Studio v5.exe`) |
 | `test_scanner.py` | Unit tests for scanner, folder collection, and tag payload read/write |
 
 ---
@@ -74,6 +74,6 @@ Recursively scans image directories for visually duplicate photos using perceptu
 
 ## Build
 ```bash
-pyinstaller "Duplicate Image Detective.spec" --clean --noconfirm
+pyinstaller "picCurator Studio.spec" --clean --noconfirm
 # Output: dist/PicCurator Studio v5.exe
 ```

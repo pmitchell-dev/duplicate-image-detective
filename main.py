@@ -1,5 +1,5 @@
 """
-main.py — Duplicate Image Detective
+main.py — picCurator Studio
 A Tkinter application for finding and managing near-duplicate images.
 """
 from __future__ import annotations
@@ -822,7 +822,7 @@ def save_tag_categories():
     except Exception:
         pass
 
-class DuplicateDetectiveApp(tk.Tk):
+class PicCuratorStudioApp(tk.Tk):
 
     def __init__(self):
         super().__init__()
@@ -4294,7 +4294,7 @@ def _darken(hex_color: str, amount: int = 40) -> str:
 # Entry point
 # ─────────────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    app = DuplicateDetectiveApp()
+    app = PicCuratorStudioApp()
 
     # Centre on screen
     app.update_idletasks()
