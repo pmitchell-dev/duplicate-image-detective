@@ -553,37 +553,59 @@ def immich_smart_search(server_url: str, api_key: str, query: str, limit: int = 
     import urllib.parse
     q_enc = urllib.parse.quote(query)
     
-    # Try GET /search/smart
-    ok, status, res = immich_request(server_url, api_key, f"/search/smart?q={q_enc}&size={limit}")
-    if ok:
+    all_assets = []
+    page = 1
+    size = limit if limit > 0 else 250
+    working_method = None
+    
+    while True:
+        current_assets = []
+        ok = False
+        res = None
+        
+        # Try GET /search/smart
+        if working_method is None or working_method == "get_smart":
+            ok, status, res = immich_request(server_url, api_key, f"/search/smart?q={q_enc}&size={size}&page={page}")
+            if ok:
+                working_method = "get_smart"
+                
+        # Try POST /search/smart
+        if not ok and (working_method is None or working_method == "post_smart"):
+            ok, status, res = immich_request(server_url, api_key, "/search/smart", method="POST", payload={"query": query, "size": size, "page": page})
+            if ok:
+                working_method = "post_smart"
+                
+        # Try POST /search/metadata as fallback
+        if not ok and (working_method is None or working_method == "post_metadata"):
+            ok, status, res = immich_request(server_url, api_key, "/search/metadata", method="POST", payload={"q": query, "withMetadata": True, "size": size, "page": page})
+            if ok:
+                working_method = "post_metadata"
+                
+        if not ok:
+            if page == 1:
+                return False, "Could not perform smart search."
+            else:
+                break
+                
+        # Parse results
         if isinstance(res, dict) and "assets" in res and "items" in res["assets"]:
-            return True, res["assets"]["items"]
+            current_assets = res["assets"]["items"]
         elif isinstance(res, list):
-            return True, res
+            current_assets = res
         elif isinstance(res, dict) and "items" in res:
-            return True, res["items"]
+            current_assets = res["items"]
             
-    # Try POST /search/smart
-    ok, status, res = immich_request(server_url, api_key, "/search/smart", method="POST", payload={"query": query, "size": limit})
-    if ok:
-        if isinstance(res, dict) and "assets" in res and "items" in res["assets"]:
-            return True, res["assets"]["items"]
-        elif isinstance(res, list):
-            return True, res
-        elif isinstance(res, dict) and "items" in res:
-            return True, res["items"]
+        if not current_assets:
+            break
             
-    # Try POST /search/metadata as fallback
-    ok, status, res = immich_request(server_url, api_key, "/search/metadata", method="POST", payload={"q": query, "withMetadata": True, "size": limit})
-    if ok:
-        if isinstance(res, dict) and "assets" in res and "items" in res["assets"]:
-            return True, res["assets"]["items"]
-        elif isinstance(res, list):
-            return True, res
-        elif isinstance(res, dict) and "items" in res:
-            return True, res["items"]
+        all_assets.extend(current_assets)
+        
+        if len(current_assets) < size:
+            break
             
-    return False, "Could not perform smart search."
+        page += 1
+        
+    return True, all_assets
 
 
 def immich_download_thumbnail(server_url: str, api_key: str, asset_id: str) -> bytes | None:
