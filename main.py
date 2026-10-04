@@ -3276,6 +3276,42 @@ class DuplicateDetectiveApp(tk.Tk):
             fg=ACCENT_BLUE,
         ).pack(side="bottom", anchor="w", pady=(6, 0))
 
+        # Local Path Mapping & Mass Edit Bridge Card
+        map_card = tk.Frame(body, bg=BG_PANEL, padx=12, pady=10)
+        map_card.pack(fill="x", padx=10, pady=(0, 10))
+
+        tk.Label(
+            map_card,
+            text="Local Folder Mapping for Mass Edit",
+            font=(FONT_FAMILY, 9, "bold"),
+            bg=BG_PANEL,
+            fg=ACCENT_BLUE,
+        ).pack(anchor="w", pady=(0, 4))
+
+        # Target Local Folder Row
+        row_loc = tk.Frame(map_card, bg=BG_PANEL)
+        row_loc.pack(fill="x", pady=2)
+        tk.Label(row_loc, text="Local Path:", font=(FONT_FAMILY, 8, "bold"), bg=BG_PANEL, fg=TEXT_MAIN, width=12, anchor="w").pack(side="left")
+        e_loc = tk.Entry(row_loc, textvariable=self.var_immich_local_path, font=(FONT_FAMILY, 8), bg=BG_CARD, fg=TEXT_MAIN, insertbackground=TEXT_MAIN, relief="flat")
+        e_loc.pack(side="left", fill="x", expand=True, padx=(0, 6), ipady=2)
+        self._make_button(row_loc, "🎯 Target Folder (Browse)", self._on_immich_browse_local_path, fg=BG_DARK, bg=ACCENT_GREEN).pack(side="right")
+
+        # Server Path Prefix & Open in Mass Edit Row
+        row_srv = tk.Frame(map_card, bg=BG_PANEL)
+        row_srv.pack(fill="x", pady=2)
+        tk.Label(row_srv, text="Server Prefix:", font=(FONT_FAMILY, 8, "bold"), bg=BG_PANEL, fg=TEXT_MAIN, width=12, anchor="w").pack(side="left")
+        e_srv = tk.Entry(row_srv, textvariable=self.var_immich_server_prefix, font=(FONT_FAMILY, 8), bg=BG_CARD, fg=TEXT_MAIN, insertbackground=TEXT_MAIN, relief="flat")
+        e_srv.pack(side="left", fill="x", expand=True, padx=(0, 6), ipady=2)
+
+        self.btn_open_search_in_mass_edit = self._make_button(
+            row_srv,
+            "📂 Open in Mass Edit",
+            self._on_immich_open_search_in_mass_edit,
+            fg=BG_DARK,
+            bg=ACCENT_BLUE,
+        )
+        self.btn_open_search_in_mass_edit.pack(side="right")
+
     # ── Immich Event Handlers & API Callbacks ────────────────────────
     def _on_immich_test_click(self):
         url = self.var_immich_url.get().strip()
@@ -3742,6 +3778,87 @@ class DuplicateDetectiveApp(tk.Tk):
             self._update_status(f"Found {len(matched_local_paths)} local file(s) for '{pname}' ({missing_count} missing on disk).")
         else:
             self._update_status(f"Matched all {len(matched_local_paths)} local image file(s) for '{pname}'!")
+
+        self._open_in_mass_edit(matched_local_paths)
+
+    def _on_immich_open_search_in_mass_edit(self):
+        local_root = self.var_immich_local_path.get().strip()
+        if not local_root:
+            d = filedialog.askdirectory(title="Select Local Target Folder for Immich Image Assets")
+            if d:
+                local_root = d
+                self.var_immich_local_path.set(d)
+                self._save_immich_config()
+            else:
+                return
+
+        server_prefix = self.var_immich_server_prefix.get().strip()
+
+        items = self.tree_immich_smart_search.get_children()
+        if not items:
+            messagebox.showwarning("No Search Results", "Please perform a search and wait for results first.")
+            return
+
+        matched_local_paths: list[Path] = []
+        missing_count = 0
+
+        # Normalize prefix paths for Windows/POSIX compatibility
+        s_pref_norm = server_prefix.replace("/", "\\").rstrip("\\").lower()
+        l_root_norm = local_root.replace("/", "\\").rstrip("\\")
+
+        for item in items:
+            vals = self.tree_immich_smart_search.item(item)["values"]
+            if len(vals) < 4:
+                continue
+            filename = str(vals[0])
+            orig_path = str(vals[3])
+
+            matched_path = None
+            if orig_path and orig_path != "N/A":
+                op_norm = orig_path.replace("/", "\\")
+                op_norm_lower = op_norm.lower()
+
+                # Strategy 1: Replace server_prefix with local_root
+                if s_pref_norm and op_norm_lower.startswith(s_pref_norm):
+                    rel = op_norm[len(s_pref_norm):].lstrip("\\")
+                    cand = Path(l_root_norm) / rel
+                    if cand.exists():
+                        matched_path = cand
+
+                # Strategy 2: Relative sub-folder match
+                if not matched_path:
+                    parts = [p for p in op_norm.split("\\") if p]
+                    if len(parts) >= 2:
+                        sub_rel = Path(parts[-2]) / parts[-1]
+                        cand_sub = Path(l_root_norm) / sub_rel
+                        if cand_sub.exists():
+                            matched_path = cand_sub
+
+                # Strategy 3: Direct filename match in local_root
+                if not matched_path:
+                    cand_direct = Path(l_root_norm) / filename
+                    if cand_direct.exists():
+                        matched_path = cand_direct
+
+            if matched_path and matched_path.exists():
+                matched_local_paths.append(matched_path)
+            else:
+                missing_count += 1
+
+        if not matched_local_paths:
+            msg = (
+                f"Could not locate any matching local images under:\n{local_root}\n\n"
+                f"Server path prefix:\n{server_prefix}\n\n"
+                "Please check that your Target Folder and Server Prefix match your local file structure."
+            )
+            messagebox.showerror("Local Files Not Found", msg)
+            return
+
+        query_name = self.var_immich_smart_search_query.get().strip() or "Search Results"
+        if missing_count > 0:
+            self._update_status(f"Found {len(matched_local_paths)} local file(s) for '{query_name}' ({missing_count} missing on disk).")
+        else:
+            self._update_status(f"Matched all {len(matched_local_paths)} local image file(s) for '{query_name}'!")
 
         self._open_in_mass_edit(matched_local_paths)
 
