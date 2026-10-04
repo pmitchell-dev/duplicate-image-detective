@@ -1,0 +1,24 @@
+# Git and IDE
+.git
+.gitignore
+.venv
+__pycache__
+*.code-workspace
+
+# Desktop Build Artifacts
+build/
+dist/
+*.spec
+build_log.txt
+
+# Test Data and Images
+screenshots/
+test_images/
+test_*.py
+make_test_images.py
+*.jpg
+
+# Desktop Entrypoints and Configs
+main.py
+config.ini
+requirements.txt
