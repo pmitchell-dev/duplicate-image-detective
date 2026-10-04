@@ -73,7 +73,10 @@ def get_person_assets(req: PersonAssetsQuery):
 
 @app.post("/api/test-connection")
 def test_connection(req: BaseQuery):
-    url = f"{req.server_url.rstrip('/')}/api/server-info"
+    base_url = req.server_url.strip().rstrip('/')
+    if not base_url.startswith("http://") and not base_url.startswith("https://"):
+        base_url = "http://" + base_url
+    url = f"{base_url}/api/server-info"
     headers = {"Accept": "application/json"}
     if req.api_key:
         headers["x-api-key"] = req.api_key.strip()
