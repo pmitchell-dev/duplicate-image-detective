@@ -12,6 +12,7 @@ from PIL import Image
 # Add root project dir to path so we can import scanner
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 import scanner
+import requests
 try:
     from send2trash import send2trash
 except ImportError:
@@ -69,6 +70,19 @@ def get_person_assets(req: PersonAssetsQuery):
     if not success:
         raise HTTPException(status_code=500, detail=str(result))
     return {"assets": result}
+
+@app.post("/api/test-connection")
+def test_connection(req: BaseQuery):
+    url = f"{req.server_url.rstrip('/')}/api/server-info"
+    headers = {"Accept": "application/json"}
+    if req.api_key:
+        headers["x-api-key"] = req.api_key.strip()
+    try:
+        resp = requests.get(url, headers=headers, timeout=5)
+        resp.raise_for_status()
+        return {"status": "success", "message": "✓ Connection Successful"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Connection failed: {str(e)}")
 
 @app.get("/api/image")
 def get_local_image(path: str):

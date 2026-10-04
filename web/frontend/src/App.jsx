@@ -13,6 +13,7 @@ function App() {
   const [people, setPeople] = useState([]);
   
   const [configSavedMsg, setConfigSavedMsg] = useState(false);
+  const [testConnMsg, setTestConnMsg] = useState('');
   
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState([]);
@@ -37,6 +38,23 @@ function App() {
     localStorage.setItem('pic_apiKey', apiKey);
     setConfigSavedMsg(true);
     setTimeout(() => setConfigSavedMsg(false), 3000);
+  };
+
+  const handleTestConnection = async () => {
+    if (!serverUrl || !apiKey) return;
+    setTestConnMsg('Testing...');
+    setError('');
+    try {
+      const response = await axios.post(`${API_BASE}/test-connection`, {
+        server_url: serverUrl,
+        api_key: apiKey
+      });
+      setTestConnMsg(response.data.message || '✓ Success');
+    } catch (err) {
+      setTestConnMsg('✗ Failed');
+      setError(err.response?.data?.detail || err.message);
+    }
+    setTimeout(() => setTestConnMsg(''), 4000);
   };
 
   const handleSmartSearch = async (e) => {
@@ -203,7 +221,10 @@ function App() {
               </button>
             </div>
             
-            <div className="input-group full-width" style={{ display: 'flex', justifyContent: 'center', marginTop: '0.5rem' }}>
+            <div className="input-group full-width" style={{ display: 'flex', justifyContent: 'center', marginTop: '0.5rem', gap: '1rem' }}>
+              <button type="button" className="btn-action" onClick={handleTestConnection} disabled={!serverUrl || !apiKey} style={{ background: 'rgba(255,255,255,0.05)', color: 'var(--text-muted)' }}>
+                {testConnMsg || 'Test Connection'}
+              </button>
               <button type="button" className="btn-action" onClick={handleSaveConfig} style={{ background: 'rgba(255,255,255,0.05)', color: 'var(--text-muted)' }}>
                 {configSavedMsg ? '✓ Configuration Saved' : 'Save Configuration'}
               </button>
