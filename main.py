@@ -36,6 +36,7 @@ from scanner import (
     immich_add_asset_to_album,
     immich_get_asset_info,
     immich_get_recent_assets,
+    immich_smart_search,
     immich_download_thumbnail,
     immich_upload_asset,
 )
@@ -829,6 +830,8 @@ class DuplicateDetectiveApp(tk.Tk):
         self.var_immich_key = tk.StringVar(value="")
         self.var_immich_status = tk.StringVar(value="Ready to test communication")
         self.var_immich_asset_id = tk.StringVar()
+        self.var_immich_smart_search_query = tk.StringVar()
+        self.var_immich_smart_search_count = tk.StringVar()
         self.var_immich_new_tag = tk.StringVar()
         self.var_immich_tag_target_asset = tk.StringVar()
         self.var_immich_new_album = tk.StringVar()
@@ -2865,6 +2868,7 @@ class DuplicateDetectiveApp(tk.Tk):
             ("tags_albums", "🏷️ Tags & Albums"),
             ("upload", "📤 Upload Image"),
             ("people", "👤 Face & People Finder"),
+            ("smart_search", "✨ AI Smart Search"),
         ]
 
         for mode_key, mode_label in modes:
@@ -2903,6 +2907,11 @@ class DuplicateDetectiveApp(tk.Tk):
         f_people = tk.Frame(self._immich_sub_container, bg=BG_DARK)
         self._immich_sub_frames["people"] = f_people
         self._build_immich_sub_people(f_people)
+
+        # 5. Smart Search Frame
+        f_smart = tk.Frame(self._immich_sub_container, bg=BG_DARK)
+        self._immich_sub_frames["smart_search"] = f_smart
+        self._build_immich_sub_smart_search(f_smart)
 
         # Default sub-mode
         self._switch_immich_sub_mode("asset_info")
@@ -3218,6 +3227,54 @@ class DuplicateDetectiveApp(tk.Tk):
             bg=ACCENT_BLUE,
         )
         self.btn_open_in_mass_edit.pack(side="right")
+
+    # ── 5. AI Smart Search Sub-Tab ───────────────────────────────────
+    def _build_immich_sub_smart_search(self, parent: tk.Frame):
+        body = tk.Frame(parent, bg=BG_DARK)
+        body.pack(fill="both", expand=True)
+
+        top_frame = tk.Frame(body, bg=BG_CARD, padx=12, pady=12)
+        top_frame.pack(fill="x", padx=10, pady=(10, 0))
+
+        tk.Label(top_frame, text="✨ AI Smart Search:", font=(FONT_FAMILY, 11, "bold"), bg=BG_CARD, fg=ACCENT_BLUE).pack(side="left", padx=(0, 10))
+        
+        e_query = tk.Entry(top_frame, textvariable=self.var_immich_smart_search_query, font=(FONT_FAMILY, 10), bg=BG_PANEL, fg=TEXT_MAIN, insertbackground=TEXT_MAIN, relief="flat")
+        e_query.pack(side="left", fill="x", expand=True, ipady=4, padx=(0, 10))
+        e_query.bind("<Return>", lambda e: self._on_immich_smart_search())
+
+        self._make_button(top_frame, "🔍 Search", self._on_immich_smart_search, fg=BG_DARK, bg=ACCENT_GREEN).pack(side="right")
+
+        # Results area
+        res_frame = tk.Frame(body, bg=BG_CARD, padx=12, pady=12)
+        res_frame.pack(fill="both", expand=True, padx=10, pady=10)
+
+        hdr = tk.Frame(res_frame, bg=BG_CARD)
+        hdr.pack(fill="x", pady=(0, 8))
+        tk.Label(hdr, text="Search Results", font=(FONT_FAMILY, 10, "bold"), bg=BG_CARD, fg=ACCENT_GREEN).pack(side="left")
+
+        cols = ("filename", "id", "created", "path")
+        self.tree_immich_smart_search = ttk.Treeview(res_frame, columns=cols, show="headings", height=15)
+        self.tree_immich_smart_search.heading("filename", text="Filename")
+        self.tree_immich_smart_search.heading("id", text="Asset ID")
+        self.tree_immich_smart_search.heading("created", text="Created At")
+        self.tree_immich_smart_search.heading("path", text="Original Path")
+        self.tree_immich_smart_search.column("filename", width=150)
+        self.tree_immich_smart_search.column("id", width=150)
+        self.tree_immich_smart_search.column("created", width=120)
+        self.tree_immich_smart_search.column("path", width=250)
+
+        sb = ttk.Scrollbar(res_frame, orient="vertical", command=self.tree_immich_smart_search.yview)
+        self.tree_immich_smart_search.configure(yscrollcommand=sb.set)
+        self.tree_immich_smart_search.pack(side="left", fill="both", expand=True)
+        sb.pack(side="right", fill="y")
+
+        tk.Label(
+            res_frame,
+            textvariable=self.var_immich_smart_search_count,
+            font=(FONT_FAMILY, 9, "bold"),
+            bg=BG_CARD,
+            fg=ACCENT_BLUE,
+        ).pack(side="bottom", anchor="w", pady=(6, 0))
 
     # ── Immich Event Handlers & API Callbacks ────────────────────────
     def _on_immich_test_click(self):
@@ -3566,6 +3623,40 @@ class DuplicateDetectiveApp(tk.Tk):
                 messagebox.showerror("Error", f"Failed to retrieve assets for person:\n{assets}")
 
         threading.Thread(target=_bg, daemon=True).start()
+
+    def _on_immich_smart_search(self):
+        query = self.var_immich_smart_search_query.get().strip()
+        if not query:
+            messagebox.showwarning("Missing Query", "Please enter a search term.")
+            return
+
+        url = self.var_immich_url.get()
+        key = self.var_immich_key.get()
+
+        self.var_immich_smart_search_count.set("Searching...")
+
+        def _bg():
+            ok, assets = immich_smart_search(url, key, query)
+            if ok and isinstance(assets, list):
+                for item in self.tree_immich_smart_search.get_children():
+                    self.tree_immich_smart_search.delete(item)
+                
+                for asset in assets:
+                    orig_path = asset.get("originalPath") or asset.get("originalFileName") or "Unknown"
+                    self.tree_immich_smart_search.insert("", "end", values=(
+                        asset.get("originalFileName", "Unknown"),
+                        asset.get("id", "Unknown"),
+                        asset.get("fileCreatedAt", ""),
+                        orig_path
+                    ))
+                self.var_immich_smart_search_count.set(f"Total found: {len(assets)} asset(s)")
+                self._update_status(f"Smart Search found {len(assets)} assets for '{query}'.")
+            else:
+                self.var_immich_smart_search_count.set("Total found: 0 asset(s)")
+                messagebox.showerror("Error", f"Search failed:\n{assets}")
+
+        threading.Thread(target=_bg, daemon=True).start()
+
 
     def _on_immich_browse_local_path(self):
         d = filedialog.askdirectory(title="Select Local Target Folder for Immich Image Assets")
