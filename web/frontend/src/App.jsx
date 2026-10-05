@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { Search, Server, Key, AlertCircle, Trash2, RotateCw, Tag, CheckSquare, Square, Users, User, Folder, Scissors, ChevronLeft, ChevronRight, X, Crop } from 'lucide-react';
+import logo from './assets/logo.jpg';
 
 const API_BASE = '/api';
 
@@ -498,8 +499,8 @@ function App() {
     <div className="app-container">
       <header className="header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
-          <h1>PicCurator Web</h1>
-          <p>AI Smart Search & Mass Edit</p>
+          <img src={logo} alt="PicCurator Web" style={{ height: '80px', objectFit: 'contain' }} />
+          <p style={{ marginTop: '0.5rem', fontWeight: 600 }}>AI Smart Search & Mass Edit</p>
         </div>
         <button className="btn-action" onClick={() => setShowTagsModal(true)} style={{ background: '#3b82f6', height: 'fit-content' }}>
           <Tag size={18} /> Manage Global Tags
