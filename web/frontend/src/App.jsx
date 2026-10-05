@@ -43,6 +43,15 @@ function App() {
   const [newCategoryInput, setNewCategoryInput] = useState('');
   const [newTagInputs, setNewTagInputs] = useState({});
 
+  const handleTabAutocomplete = (e, value, setter) => {
+    if (e.key === 'Tab' && value) {
+      e.preventDefault();
+      const allTags = Object.values(globalTags).flat();
+      const match = allTags.find(t => t.toLowerCase().startsWith(value.toLowerCase()));
+      if (match) setter(match);
+    }
+  };
+
   const handleCreateCategory = async () => {
     const cat = newCategoryInput.trim();
     if (!cat || globalTags[cat]) return;
@@ -645,8 +654,11 @@ function App() {
                     list="globalTagsList"
                     style={{ padding: '0.5rem', width: '150px' }}
                     data-bwignore="true"
-                    autocomplete="off"
-                    onKeyDown={e => e.key === 'Enter' && tagInput && selectedPaths.size > 0 && !isProcessing && handleMassAction('addTag')}
+                    autoComplete="off"
+                    onKeyDown={e => {
+                      handleTabAutocomplete(e, tagInput, setTagInput);
+                      if (e.key === 'Enter' && tagInput && selectedPaths.size > 0 && !isProcessing) handleMassAction('addTag');
+                    }}
                   />
                   <button className="btn-action" onClick={() => handleMassAction('addTag')} disabled={isProcessing || selectedPaths.size === 0}>
                     <Tag size={18} /> Add
@@ -811,8 +823,11 @@ function App() {
                   list="globalTagsList"
                   style={{ padding: '0.5rem', width: '200px' }}
                   data-bwignore="true"
-                  autocomplete="off"
-                  onKeyDown={e => e.key === 'Enter' && tagInput && !isProcessing && handleViewerAddTag()}
+                  autoComplete="off"
+                  onKeyDown={e => {
+                    handleTabAutocomplete(e, tagInput, setTagInput);
+                    if (e.key === 'Enter' && tagInput && !isProcessing) handleViewerAddTag();
+                  }}
                 />
                 <button className="btn-action" onClick={handleViewerAddTag} disabled={isProcessing || !tagInput}>
                   <Tag size={18} /> Add Tag
@@ -884,7 +899,10 @@ function App() {
                     placeholder={`New tag in ${category}...`}
                     value={newTagInputs[category] || ''}
                     onChange={e => setNewTagInputs(prev => ({...prev, [category]: e.target.value}))}
-                    onKeyDown={e => e.key === 'Enter' && handleAddTagToCategory(category)}
+                    onKeyDown={e => {
+                      handleTabAutocomplete(e, newTagInputs[category] || '', (val) => setNewTagInputs(prev => ({...prev, [category]: val})));
+                      if (e.key === 'Enter') handleAddTagToCategory(category);
+                    }}
                     style={{ padding: '0.4rem', flex: 1, fontSize: '0.9rem' }}
                   />
                   <button className="btn-action" onClick={() => handleAddTagToCategory(category)} disabled={!newTagInputs[category]}>
