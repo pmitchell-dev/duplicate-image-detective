@@ -303,6 +303,56 @@ def get_tags(path: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+TAG_FILE_PATH = "/mnt/backups/piccurator/tags.json"
+DEFAULT_TAGS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "default_tags.json")
+
+def get_global_tags():
+    if not os.path.exists(TAG_FILE_PATH):
+        if os.path.exists(DEFAULT_TAGS_PATH):
+            shutil.copy(DEFAULT_TAGS_PATH, TAG_FILE_PATH)
+        else:
+            return {}
+    try:
+        with open(TAG_FILE_PATH, "r") as f:
+            return json.load(f)
+    except:
+        return {}
+
+def save_global_tags(tags_data):
+    os.makedirs(os.path.dirname(TAG_FILE_PATH), exist_ok=True)
+    with open(TAG_FILE_PATH, "w") as f:
+        json.dump(tags_data, f, indent=2)
+
+@app.get("/api/tag-list")
+def read_tag_list():
+    return get_global_tags()
+
+class TagListUpdate(BaseModel):
+    category: str
+    tag: str
+
+@app.post("/api/tag-list")
+def add_to_tag_list(req: TagListUpdate):
+    tags_data = get_global_tags()
+    cat = req.category.strip()
+    tag = req.tag.strip()
+    if not cat or not tag:
+        raise HTTPException(status_code=400, detail="Category and tag required")
+        
+    if cat not in tags_data:
+        tags_data[cat] = []
+        
+    if tag not in tags_data[cat]:
+        tags_data[cat].append(tag)
+        save_global_tags(tags_data)
+        
+    return {"status": "success", "tags": tags_data}
+
+@app.post("/api/tag-list/full")
+def save_full_tag_list(req: dict):
+    save_global_tags(req)
+    return {"status": "success", "tags": req}
+
 @app.post("/api/tags")
 def manage_tags(req: TagAction):
     count = 0

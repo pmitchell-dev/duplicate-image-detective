@@ -37,6 +37,49 @@ function App() {
   const [isDrawing, setIsDrawing] = useState(false);
   const [cropBox, setCropBox] = useState(null);
 
+  // Global Tags State
+  const [globalTags, setGlobalTags] = useState({});
+  const [showTagsModal, setShowTagsModal] = useState(false);
+  const [newCategoryInput, setNewCategoryInput] = useState('');
+  const [newTagInputs, setNewTagInputs] = useState({});
+
+  const handleCreateCategory = async () => {
+    const cat = newCategoryInput.trim();
+    if (!cat || globalTags[cat]) return;
+    const newTags = { ...globalTags, [cat]: [] };
+    setGlobalTags(newTags);
+    setNewCategoryInput('');
+    await axios.post(`${API_BASE}/tag-list/full`, newTags).catch(console.error);
+  };
+
+  const handleAddTagToCategory = async (category) => {
+    const newTagValue = (newTagInputs[category] || '').trim();
+    if (!newTagValue) return;
+    const newTags = { ...globalTags };
+    if (!newTags[category].includes(newTagValue)) {
+      newTags[category] = [...newTags[category], newTagValue];
+      setGlobalTags(newTags);
+      setNewTagInputs(prev => ({ ...prev, [category]: '' }));
+      await axios.post(`${API_BASE}/tag-list/full`, newTags).catch(console.error);
+    }
+  };
+
+  const handleRemoveTagFromCategory = async (category, tagToRemove) => {
+    if (!window.confirm(`Delete tag '${tagToRemove}' from ${category}?`)) return;
+    const newTags = { ...globalTags };
+    newTags[category] = newTags[category].filter(t => t !== tagToRemove);
+    setGlobalTags(newTags);
+    await axios.post(`${API_BASE}/tag-list/full`, newTags).catch(console.error);
+  };
+
+  const handleDeleteCategory = async (category) => {
+    if (!window.confirm(`Delete entire category '${category}' and all its tags?`)) return;
+    const newTags = { ...globalTags };
+    delete newTags[category];
+    setGlobalTags(newTags);
+    await axios.post(`${API_BASE}/tag-list/full`, newTags).catch(console.error);
+  };
+
   useEffect(() => {
     if (viewingAsset && viewingAsset.originalPath) {
       setViewerTags([]); // clear while loading
@@ -46,10 +89,14 @@ function App() {
     }
   }, [viewingAsset]);
 
-  // Load folders on mount
+  // Load folders and global tags on mount
   useEffect(() => {
     axios.get(`${API_BASE}/folders`).then(res => {
       setFolders(res.data.folders || []);
+    }).catch(console.error);
+    
+    axios.get(`${API_BASE}/tag-list`).then(res => {
+      setGlobalTags(res.data || {});
     }).catch(console.error);
   }, []);
 
@@ -258,6 +305,15 @@ function App() {
         action: 'add'
       });
       setViewerTags([...viewerTags, tagInput]);
+      
+      // Automatically register to global list
+      await axios.post(`${API_BASE}/tag-list`, {
+        category: 'Uncategorized',
+        tag: tagInput
+      }).catch(console.error);
+      const gTagsRes = await axios.get(`${API_BASE}/tag-list`);
+      setGlobalTags(gTagsRes.data || {});
+
       setTagInput('');
     } catch (err) {
       alert(`Tagging failed: ${err.message}`);
@@ -359,6 +415,19 @@ function App() {
           tag: tagInput,
           action: actionType === 'addTag' ? 'add' : 'remove'
         });
+        
+        if (actionType === 'addTag') {
+          // Automatically register to global tag list
+          await axios.post(`${API_BASE}/tag-list`, {
+            category: 'Uncategorized',
+            tag: tagInput
+          }).catch(console.error);
+          
+          // Refresh global tags
+          const gTagsRes = await axios.get(`${API_BASE}/tag-list`);
+          setGlobalTags(gTagsRes.data || {});
+        }
+        
         alert(`Successfully modified tags for ${paths.length} images`);
       } else if (actionType === 'rotate') {
         await axios.post(`${API_BASE}/rotate`, { paths });
@@ -379,9 +448,14 @@ function App() {
 
   return (
     <div className="app-container">
-      <header className="header">
-        <h1>PicCurator Web</h1>
-        <p>AI Smart Search & Mass Edit</p>
+      <header className="header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <h1>PicCurator Web</h1>
+          <p>AI Smart Search & Mass Edit</p>
+        </div>
+        <button className="btn-action" onClick={() => setShowTagsModal(true)} style={{ background: '#3b82f6', height: 'fit-content' }}>
+          <Tag size={18} /> Manage Global Tags
+        </button>
       </header>
 
       <main>
@@ -546,6 +620,7 @@ function App() {
                     placeholder="Enter tag..." 
                     value={tagInput}
                     onChange={e => setTagInput(e.target.value)}
+                    list="globalTagsList"
                     style={{ padding: '0.5rem', width: '150px' }}
                   />
                   <button className="btn-action" onClick={() => handleMassAction('addTag')} disabled={isProcessing || selectedPaths.size === 0}>
@@ -713,6 +788,7 @@ function App() {
                   placeholder="Add a new tag..." 
                   value={tagInput}
                   onChange={e => setTagInput(e.target.value)}
+                  list="globalTagsList"
                   style={{ padding: '0.5rem', width: '200px' }}
                 />
                 <button className="btn-action" onClick={handleViewerAddTag} disabled={isProcessing || !tagInput}>
@@ -722,7 +798,74 @@ function App() {
             </div>
           </div>
         </div>
+      {showTagsModal && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.8)', zIndex: 200,
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center'
+        }} onClick={() => setShowTagsModal(false)}>
+          <div style={{ background: '#1e293b', padding: '2rem', borderRadius: '0.5rem', width: '80%', maxHeight: '80vh', overflowY: 'auto', color: 'white' }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '1px solid #334155', paddingBottom: '1rem' }}>
+              <h2>Global Tags Manager</h2>
+              <button className="btn-action" onClick={() => setShowTagsModal(false)}><X size={18} /> Close</button>
+            </div>
+            
+            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '2rem' }}>
+              <input 
+                type="text" 
+                placeholder="New Category Name..." 
+                value={newCategoryInput}
+                onChange={e => setNewCategoryInput(e.target.value)}
+                style={{ padding: '0.5rem', flex: 1 }}
+              />
+              <button className="btn-action" onClick={handleCreateCategory} disabled={!newCategoryInput} style={{ background: '#3b82f6' }}>
+                Create Category
+              </button>
+            </div>
+
+            {Object.keys(globalTags).map(category => (
+              <div key={category} style={{ marginBottom: '2rem', background: '#0f172a', padding: '1rem', borderRadius: '0.5rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #334155', paddingBottom: '0.5rem', marginBottom: '1rem' }}>
+                  <h3 style={{ color: '#94a3b8', margin: 0 }}>{category}</h3>
+                  <button className="btn-action btn-danger" onClick={() => handleDeleteCategory(category)} style={{ padding: '0.2rem 0.5rem' }}>
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+                
+                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '1rem' }}>
+                  {globalTags[category].map((tag, i) => (
+                    <span key={i} style={{ background: '#334155', padding: '0.3rem 0.6rem', borderRadius: '0.25rem', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      {tag}
+                      <X size={14} style={{ cursor: 'pointer', color: '#ef4444' }} onClick={() => handleRemoveTagFromCategory(category, tag)} />
+                    </span>
+                  ))}
+                  {globalTags[category].length === 0 && <span style={{ color: '#64748b', fontSize: '0.9rem' }}>No tags yet</span>}
+                </div>
+                
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <input 
+                    type="text" 
+                    placeholder={`New tag in ${category}...`}
+                    value={newTagInputs[category] || ''}
+                    onChange={e => setNewTagInputs(prev => ({...prev, [category]: e.target.value}))}
+                    onKeyDown={e => e.key === 'Enter' && handleAddTagToCategory(category)}
+                    style={{ padding: '0.4rem', flex: 1, fontSize: '0.9rem' }}
+                  />
+                  <button className="btn-action" onClick={() => handleAddTagToCategory(category)} disabled={!newTagInputs[category]}>
+                    Add Tag
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
+
+      <datalist id="globalTagsList">
+        {Object.values(globalTags).flat().map((t, i) => (
+          <option key={i} value={t} />
+        ))}
+      </datalist>
     </div>
   );
 }
