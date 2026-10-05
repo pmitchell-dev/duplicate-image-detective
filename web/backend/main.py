@@ -143,6 +143,8 @@ def split_image(req: SplitRequest):
         name, ext = os.path.splitext(filename)
         
         saved_paths = []
+        old_tags = scanner.read_image_tags(Path(path))
+        
         with Image.open(path) as pil_img:
             # Sort rects top-to-bottom, left-to-right roughly
             photo_rects.sort(key=lambda r: (r[1] // 100, r[0]))
@@ -159,6 +161,10 @@ def split_image(req: SplitRequest):
                     kwargs["quality"] = 95
                     
                 cropped.save(new_path, **kwargs)
+                
+                if old_tags:
+                    scanner.write_image_tags(Path(new_path), old_tags)
+                    
                 saved_paths.append(new_path)
             
         # Optionally move original to recycle bin? Let frontend handle it if they want.
@@ -198,6 +204,8 @@ def manual_crop(req: CropAction):
             base_dir = os.path.dirname(req.path)
             name, ext = os.path.splitext(os.path.basename(req.path))
             
+            old_tags = scanner.read_image_tags(Path(req.path))
+            
             counter = 1
             while True:
                 new_path = os.path.join(base_dir, f"{name}_crop_{counter}{ext}")
@@ -213,6 +221,10 @@ def manual_crop(req: CropAction):
                 kwargs["quality"] = 95
                 
             cropped.save(new_path, **kwargs)
+            
+            if old_tags:
+                scanner.write_image_tags(Path(new_path), old_tags)
+                
             return {"status": "success", "new_path": new_path}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -324,6 +336,9 @@ def rotate_images(req: PathsAction):
     count = 0
     for p in req.paths:
         try:
+            path_obj = Path(p)
+            old_tags = scanner.read_image_tags(path_obj)
+            
             with Image.open(p) as img:
                 rotated = img.transpose(Image.Transpose.ROTATE_270)
                 kwargs = {}
@@ -333,6 +348,9 @@ def rotate_images(req: PathsAction):
                 if img.format in ["JPEG", "MPO"]:
                     kwargs["quality"] = 95
                 rotated.save(p, **kwargs)
+                
+            if old_tags:
+                scanner.write_image_tags(path_obj, old_tags)
             count += 1
         except Exception as e:
             print(f"Error rotating {p}: {e}")
