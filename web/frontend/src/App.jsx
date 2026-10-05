@@ -499,7 +499,7 @@ function App() {
     <div className="app-container">
       <header className="header" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem' }}>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-          <img src={logo} alt="PicCurator Web" style={{ height: '320px', objectFit: 'contain' }} />
+          <img src={logo} alt="PicCurator Web" className="logo-img" />
           <p style={{ marginTop: '0.5rem', fontWeight: 600 }}>AI Smart Search & Mass Edit</p>
         </div>
         <button className="btn-action" onClick={() => setShowTagsModal(true)} style={{ background: '#3b82f6' }}>
