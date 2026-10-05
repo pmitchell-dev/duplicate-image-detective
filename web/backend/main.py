@@ -1,5 +1,6 @@
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
+import io
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -195,9 +196,37 @@ def test_connection(req: BaseQuery):
         raise HTTPException(status_code=500, detail=f"Connection failed: {str(e)}")
 
 @app.get("/api/image")
-def get_local_image(path: str):
+def get_local_image(path: str, size: str = "large"):
     if not os.path.exists(path):
         raise HTTPException(status_code=404, detail="File not found")
+        
+    ext = os.path.splitext(path)[1].lower()
+    
+    # Browsers cannot display .tif/.tiff natively. 
+    # Also, we should resize to preview if requested to speed up loading.
+    if ext in ['.tif', '.tiff'] or size == "preview":
+        try:
+            with Image.open(path) as img:
+                if img.mode != 'RGB':
+                    img = img.convert('RGB')
+                
+                # If preview, downscale it to max 800x800 while preserving aspect ratio
+                if size == "preview":
+                    img.thumbnail((800, 800))
+                else:
+                    # Even if large, resize it slightly if it's ridiculously massive (e.g. 10k pixels) just to prevent browser crash,
+                    # but typically album pages are fine to serve as long as they're JPEGs.
+                    img.thumbnail((3000, 3000))
+                    
+                buf = io.BytesIO()
+                img.save(buf, format='JPEG', quality=85)
+                buf.seek(0)
+                return StreamingResponse(buf, media_type="image/jpeg")
+        except Exception as e:
+            # If conversion fails, fallback to sending the raw file
+            print(f"Failed to convert image {path}: {e}")
+            return FileResponse(path)
+            
     return FileResponse(path)
 
 @app.post("/api/tags")

@@ -64,10 +64,11 @@ function App() {
   
   const getAssetImgSrc = (asset, full = false) => {
     if (asset.isLocal) {
-      return `${API_BASE}/image?path=${encodeURIComponent(asset.originalPath)}`;
+      const localSize = full ? 'large' : 'preview';
+      return `${API_BASE}/image?path=${encodeURIComponent(asset.originalPath)}&size=${localSize}`;
     }
-    const size = full ? 'large' : 'preview';
-    return `${getNormalizedServerUrl()}/api/assets/${asset.id}/thumbnail?size=${size}&x-api-key=${apiKey}`;
+    // Immich only supports 'thumbnail' and 'preview' size formats
+    return `${getNormalizedServerUrl()}/api/assets/${asset.id}/thumbnail?size=preview&x-api-key=${apiKey}`;
   };
   
   const getNormalizedServerUrl = () => {
