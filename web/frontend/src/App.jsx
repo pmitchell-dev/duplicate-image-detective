@@ -359,14 +359,14 @@ function App() {
     }
     setIsProcessing(true);
     try {
-      await axios.post(`${API_BASE}/crop`, {
+      const response = await axios.post(`${API_BASE}/crop`, {
         path: viewingAsset.originalPath,
         x: cropBox.x,
         y: cropBox.y,
         width: cropBox.width,
         height: cropBox.height
       });
-      alert("Successfully cropped and saved as a new image!");
+      alert(`Successfully split image!\nNew file verified and saved at:\n${response.data.new_path}`);
       if (mode === 'folder') {
         loadFolderImages(selectedFolder);
       }
@@ -793,6 +793,8 @@ function App() {
             </div>
           </div>
         </div>
+      )}
+      
       {showTagsModal && (
         <div style={{
           position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,

@@ -165,6 +165,9 @@ def split_image(req: SplitRequest):
                 if old_tags:
                     scanner.write_image_tags(Path(new_path), old_tags)
                     
+                if not os.path.exists(new_path) or os.path.getsize(new_path) == 0:
+                    raise RuntimeError(f"Failed to verify creation of split file at {new_path}")
+                    
                 saved_paths.append(new_path)
             
         # Optionally move original to recycle bin? Let frontend handle it if they want.
@@ -224,6 +227,9 @@ def manual_crop(req: CropAction):
             
             if old_tags:
                 scanner.write_image_tags(Path(new_path), old_tags)
+                
+            if not os.path.exists(new_path) or os.path.getsize(new_path) == 0:
+                raise RuntimeError(f"Failed to verify creation of new file at {new_path}")
                 
             return {"status": "success", "new_path": new_path}
     except Exception as e:
