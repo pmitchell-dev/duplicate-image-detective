@@ -553,9 +553,6 @@ function App() {
             </div>
             
             <div className="input-group full-width" style={{ display: 'flex', justifyContent: 'center', marginTop: '0.5rem', gap: '1rem' }}>
-              <button type="button" className="btn-action" onClick={handleTestConnection} disabled={!serverUrl || !apiKey} style={{ background: 'rgba(255,255,255,0.05)', color: 'var(--text-muted)' }}>
-                {testConnMsg || 'Test Connection'}
-              </button>
               <button type="button" className="btn-action" onClick={handleSaveConfig} style={{ background: 'rgba(255,255,255,0.05)', color: 'var(--text-muted)' }}>
                 {configSavedMsg ? '✓ Configuration Saved' : 'Save Configuration'}
               </button>
