@@ -550,11 +550,9 @@ function App() {
           onClick={() => setViewingIndex(-1)}
         >
           <div style={{ position: 'absolute', top: '1rem', right: '1rem', display: 'flex', gap: '1rem', zIndex: 110 }}>
-            {viewingAsset.isLocal && (
-              <button className="btn-action" onClick={(e) => { e.stopPropagation(); handleAutoSplit(); }} disabled={isProcessing} style={{ background: '#3b82f6' }}>
-                <Scissors size={18} /> {isProcessing ? 'Processing...' : 'Auto Split Image'}
-              </button>
-            )}
+            <button className="btn-action" onClick={(e) => { e.stopPropagation(); handleAutoSplit(); }} disabled={isProcessing} style={{ background: '#3b82f6' }}>
+              <Scissors size={18} /> {isProcessing ? 'Processing...' : 'Split Image'}
+            </button>
             <button className="btn-action" onClick={() => setViewingIndex(-1)} style={{ background: 'rgba(255,255,255,0.1)' }}>
               <X size={18} /> Close
             </button>
