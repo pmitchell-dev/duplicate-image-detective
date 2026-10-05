@@ -166,6 +166,57 @@ def split_image(req: SplitRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+class CropAction(BaseModel):
+    path: str
+    x: float
+    y: float
+    width: float
+    height: float
+
+@app.post("/api/crop")
+def manual_crop(req: CropAction):
+    if not os.path.exists(req.path):
+        raise HTTPException(status_code=404, detail="File not found")
+    try:
+        with Image.open(req.path) as img:
+            left = int(img.width * req.x)
+            top = int(img.height * req.y)
+            right = int(img.width * (req.x + req.width))
+            bottom = int(img.height * (req.y + req.height))
+            
+            # Bound checking
+            left = max(0, min(left, img.width - 1))
+            top = max(0, min(top, img.height - 1))
+            right = max(left + 1, min(right, img.width))
+            bottom = max(top + 1, min(bottom, img.height))
+            
+            if right <= left or bottom <= top:
+                raise ValueError("Invalid crop dimensions")
+
+            cropped = img.crop((left, top, right, bottom))
+            
+            base_dir = os.path.dirname(req.path)
+            name, ext = os.path.splitext(os.path.basename(req.path))
+            
+            counter = 1
+            while True:
+                new_path = os.path.join(base_dir, f"{name}_crop_{counter}{ext}")
+                if not os.path.exists(new_path):
+                    break
+                counter += 1
+                
+            kwargs = {}
+            for key in ["exif", "xmp", "icc_profile"]:
+                if key in img.info:
+                    kwargs[key] = img.info[key]
+            if img.format in ["JPEG", "MPO"]:
+                kwargs["quality"] = 95
+                
+            cropped.save(new_path, **kwargs)
+            return {"status": "success", "new_path": new_path}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/api/people")
 def get_people(req: BaseQuery):
     success, result = scanner.immich_get_people(req.server_url, req.api_key)

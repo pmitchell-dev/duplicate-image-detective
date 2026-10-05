@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
-import { Search, Server, Key, AlertCircle, Trash2, RotateCw, Tag, CheckSquare, Square, Users, User, Folder, Scissors, ChevronLeft, ChevronRight, X } from 'lucide-react';
+import { Search, Server, Key, AlertCircle, Trash2, RotateCw, Tag, CheckSquare, Square, Users, User, Folder, Scissors, ChevronLeft, ChevronRight, X, Crop } from 'lucide-react';
 
 const API_BASE = '/api';
 
@@ -30,6 +30,12 @@ function App() {
   const [viewingIndex, setViewingIndex] = useState(-1);
   const viewingAsset = viewingIndex >= 0 ? results[viewingIndex] : null;
   const [viewerTags, setViewerTags] = useState([]);
+  
+  // Crop State
+  const imageRef = useRef(null);
+  const [isCropping, setIsCropping] = useState(false);
+  const [isDrawing, setIsDrawing] = useState(false);
+  const [cropBox, setCropBox] = useState(null);
 
   useEffect(() => {
     if (viewingAsset && viewingAsset.originalPath) {
@@ -255,6 +261,63 @@ function App() {
       setTagInput('');
     } catch (err) {
       alert(`Tagging failed: ${err.message}`);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleCropMouseDown = (e) => {
+    if (!isCropping || !imageRef.current) return;
+    e.preventDefault();
+    const rect = imageRef.current.getBoundingClientRect();
+    const x = (e.clientX - rect.left) / rect.width;
+    const y = (e.clientY - rect.top) / rect.height;
+    setCropBox({ startX: x, startY: y, x, y, width: 0, height: 0 });
+    setIsDrawing(true);
+  };
+
+  const handleCropMouseMove = (e) => {
+    if (!isDrawing || !cropBox || !imageRef.current) return;
+    e.preventDefault();
+    const rect = imageRef.current.getBoundingClientRect();
+    const currentX = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    const currentY = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
+    
+    setCropBox(prev => ({
+      ...prev,
+      x: Math.min(prev.startX, currentX),
+      y: Math.min(prev.startY, currentY),
+      width: Math.abs(currentX - prev.startX),
+      height: Math.abs(currentY - prev.startY)
+    }));
+  };
+
+  const handleCropMouseUp = () => {
+    setIsDrawing(false);
+  };
+
+  const handleCropSubmit = async () => {
+    if (!viewingAsset || !cropBox || cropBox.width < 0.01 || cropBox.height < 0.01) {
+      alert("Please draw a valid crop box first.");
+      return;
+    }
+    setIsProcessing(true);
+    try {
+      await axios.post(`${API_BASE}/crop`, {
+        path: viewingAsset.originalPath,
+        x: cropBox.x,
+        y: cropBox.y,
+        width: cropBox.width,
+        height: cropBox.height
+      });
+      alert("Successfully cropped and saved as a new image!");
+      if (mode === 'folder') {
+        loadFolderImages(selectedFolder);
+      }
+      setIsCropping(false);
+      setCropBox(null);
+    } catch (err) {
+      alert(`Crop failed: ${err.response?.data?.detail || err.message}`);
     } finally {
       setIsProcessing(false);
     }
@@ -550,16 +613,19 @@ function App() {
           onClick={() => setViewingIndex(-1)}
         >
           <div style={{ position: 'absolute', top: '1rem', right: '1rem', display: 'flex', gap: '1rem', zIndex: 110 }}>
+            <button className="btn-action" onClick={(e) => { e.stopPropagation(); setIsCropping(!isCropping); setCropBox(null); }} style={{ background: isCropping ? '#f59e0b' : 'rgba(255,255,255,0.1)' }}>
+              <Crop size={18} /> {isCropping ? 'Cancel Crop' : 'Manual Crop'}
+            </button>
             <button className="btn-action" onClick={(e) => { e.stopPropagation(); handleAutoSplit(); }} disabled={isProcessing} style={{ background: '#3b82f6' }}>
               <Scissors size={18} /> {isProcessing ? 'Processing...' : 'Split Image'}
             </button>
-            <button className="btn-action" onClick={() => setViewingIndex(-1)} style={{ background: 'rgba(255,255,255,0.1)' }}>
+            <button className="btn-action" onClick={() => { setViewingIndex(-1); setIsCropping(false); setCropBox(null); }} style={{ background: 'rgba(255,255,255,0.1)' }}>
               <X size={18} /> Close
             </button>
           </div>
           
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', height: '80vh' }} onClick={e => e.stopPropagation()}>
-            {viewingIndex > 0 && (
+            {viewingIndex > 0 && !isCropping && (
               <button 
                 className="btn-action" 
                 onClick={(e) => { e.stopPropagation(); setViewingIndex(viewingIndex - 1); }} 
@@ -569,13 +635,45 @@ function App() {
               </button>
             )}
             
-            <img 
-              src={getAssetImgSrc(viewingAsset, true)}
-              style={{ maxHeight: '100%', maxWidth: '80vw', objectFit: 'contain' }}
-              alt={viewingAsset.originalFileName}
-            />
+            <div 
+              style={{ position: 'relative', display: 'inline-block', maxHeight: '100%', maxWidth: '80vw', cursor: isCropping ? 'crosshair' : 'default' }}
+              onMouseDown={handleCropMouseDown}
+              onMouseMove={handleCropMouseMove}
+              onMouseUp={handleCropMouseUp}
+              onMouseLeave={handleCropMouseUp}
+            >
+              <img 
+                ref={imageRef}
+                src={getAssetImgSrc(viewingAsset, true)}
+                style={{ maxHeight: '80vh', maxWidth: '80vw', objectFit: 'contain', display: 'block', userSelect: 'none' }}
+                alt={viewingAsset.originalFileName}
+                draggable="false"
+              />
+              {isCropping && cropBox && cropBox.width > 0 && (
+                <div style={{
+                  position: 'absolute',
+                  left: `${cropBox.x * 100}%`,
+                  top: `${cropBox.y * 100}%`,
+                  width: `${cropBox.width * 100}%`,
+                  height: `${cropBox.height * 100}%`,
+                  border: '2px solid #3b82f6',
+                  backgroundColor: 'rgba(59, 130, 246, 0.2)',
+                  pointerEvents: 'none'
+                }} />
+              )}
+              {isCropping && cropBox && !isDrawing && cropBox.width > 0 && (
+                <button 
+                  className="btn-action" 
+                  onClick={handleCropSubmit} 
+                  style={{ position: 'absolute', left: '50%', bottom: '-3rem', transform: 'translateX(-50%)', background: '#10b981', zIndex: 110 }}
+                  disabled={isProcessing}
+                >
+                  <Crop size={18} /> Confirm Split
+                </button>
+              )}
+            </div>
             
-            {viewingIndex < results.length - 1 && (
+            {viewingIndex < results.length - 1 && !isCropping && (
               <button 
                 className="btn-action" 
                 onClick={(e) => { e.stopPropagation(); setViewingIndex(viewingIndex + 1); }} 
