@@ -321,11 +321,14 @@ function App() {
         setViewerTags([...viewerTags, cleanedTag]);
       }
       
-      // Automatically register to global list
-      await axios.post(`${API_BASE}/tag-list`, {
-        category: 'Uncategorized',
-        tag: tagInput
-      }).catch(console.error);
+      // Automatically register to global list if it doesn't exist anywhere
+      const tagExistsGlobally = Object.values(globalTags).flat().some(t => t.toLowerCase() === cleanedTag.toLowerCase());
+      if (!tagExistsGlobally) {
+        await axios.post(`${API_BASE}/tag-list`, {
+          category: 'Uncategorized',
+          tag: cleanedTag
+        }).catch(console.error);
+      }
       const gTagsRes = await axios.get(`${API_BASE}/tag-list`);
       setGlobalTags(gTagsRes.data || {});
 
@@ -420,23 +423,27 @@ function App() {
     const paths = Array.from(selectedPaths);
     try {
       if (actionType === 'addTag' || actionType === 'removeTag') {
-        if (!tagInput) {
+        const cleanedTag = tagInput.trim();
+        if (!cleanedTag) {
           setError('Please enter a tag');
           setIsProcessing(false);
           return;
         }
         await axios.post(`${API_BASE}/tags`, {
           paths,
-          tag: tagInput,
+          tag: cleanedTag,
           action: actionType === 'addTag' ? 'add' : 'remove'
         });
         
         if (actionType === 'addTag') {
-          // Automatically register to global tag list
-          await axios.post(`${API_BASE}/tag-list`, {
-            category: 'Uncategorized',
-            tag: tagInput
-          }).catch(console.error);
+          // Automatically register to global tag list if it doesn't exist anywhere
+          const tagExistsGlobally = Object.values(globalTags).flat().some(t => t.toLowerCase() === cleanedTag.toLowerCase());
+          if (!tagExistsGlobally) {
+            await axios.post(`${API_BASE}/tag-list`, {
+              category: 'Uncategorized',
+              tag: cleanedTag
+            }).catch(console.error);
+          }
           
           // Refresh global tags
           const gTagsRes = await axios.get(`${API_BASE}/tag-list`);
