@@ -456,7 +456,7 @@ function App() {
                     </div>
                     <div className="asset-img-container">
                       <img 
-                        src={`${getNormalizedServerUrl()}/api/assets/${asset.id}/thumbnail?size=preview&x-api-key=${apiKey}`}
+                        src={getAssetImgSrc(asset, false)}
                         alt={asset.originalFileName}
                         className="asset-img"
                         loading="lazy"
