@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { Search, Server, Key, AlertCircle, Trash2, RotateCw, Tag, CheckSquare, Square, Users, User, Folder, Scissors, ChevronLeft, ChevronRight, X, Crop } from 'lucide-react';
-import logo from './assets/logo.jpg';
+import logo from './assets/logo.png';
 
 const API_BASE = '/api';
 
@@ -497,12 +497,12 @@ function App() {
 
   return (
     <div className="app-container">
-      <header className="header" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', position: 'relative' }}>
+      <header className="header" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem' }}>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-          <img src={logo} alt="PicCurator Web" style={{ height: '80px', objectFit: 'contain' }} />
+          <img src={logo} alt="PicCurator Web" style={{ height: '160px', objectFit: 'contain' }} />
           <p style={{ marginTop: '0.5rem', fontWeight: 600 }}>AI Smart Search & Mass Edit</p>
         </div>
-        <button className="btn-action" onClick={() => setShowTagsModal(true)} style={{ background: '#3b82f6', height: 'fit-content', position: 'absolute', right: 0 }}>
+        <button className="btn-action" onClick={() => setShowTagsModal(true)} style={{ background: '#3b82f6' }}>
           <Tag size={18} /> Manage Global Tags
         </button>
       </header>
