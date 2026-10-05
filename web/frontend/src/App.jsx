@@ -29,6 +29,16 @@ function App() {
   // Image Viewer State
   const [viewingIndex, setViewingIndex] = useState(-1);
   const viewingAsset = viewingIndex >= 0 ? results[viewingIndex] : null;
+  const [viewerTags, setViewerTags] = useState([]);
+
+  useEffect(() => {
+    if (viewingAsset && viewingAsset.originalPath) {
+      setViewerTags([]); // clear while loading
+      axios.get(`${API_BASE}/tags?path=${encodeURIComponent(viewingAsset.originalPath)}`)
+        .then(res => setViewerTags(res.data.tags || []))
+        .catch(err => console.error("Failed to load tags", err));
+    }
+  }, [viewingAsset]);
 
   // Load folders on mount
   useEffect(() => {
@@ -65,10 +75,14 @@ function App() {
   const getAssetImgSrc = (asset, full = false) => {
     if (asset.isLocal) {
       const localSize = full ? 'large' : 'preview';
-      return `${API_BASE}/image?path=${encodeURIComponent(asset.originalPath)}&size=${localSize}`;
+      let url = `${API_BASE}/image?path=${encodeURIComponent(asset.originalPath)}&size=${localSize}`;
+      if (asset.rotated) url += `&t=${asset.rotated}`;
+      return url;
     }
     // Immich only supports 'thumbnail' and 'preview' size formats
-    return `${getNormalizedServerUrl()}/api/assets/${asset.id}/thumbnail?size=preview&x-api-key=${apiKey}`;
+    let url = `${getNormalizedServerUrl()}/api/assets/${asset.id}/thumbnail?size=preview&x-api-key=${apiKey}`;
+    if (asset.rotated) url += `&t=${asset.rotated}`;
+    return url;
   };
   
   const getNormalizedServerUrl = () => {
@@ -181,15 +195,66 @@ function App() {
   };
 
   const handleAutoSplit = async () => {
-    if (!viewingAsset || !viewingAsset.isLocal) return;
+    if (!viewingAsset) return;
     setIsProcessing(true);
     try {
       const response = await axios.post(`${API_BASE}/split`, { path: viewingAsset.originalPath });
       alert(`Successfully split image into ${response.data.parts.length} parts!`);
-      loadFolderImages(selectedFolder);
+      if (mode === 'folder') {
+        loadFolderImages(selectedFolder);
+      }
       setViewingIndex(-1);
     } catch (err) {
       alert(`Split failed: ${err.response?.data?.detail || err.message}`);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleViewerRotate = async () => {
+    if (!viewingAsset) return;
+    setIsProcessing(true);
+    try {
+      await axios.post(`${API_BASE}/rotate`, { paths: [viewingAsset.originalPath] });
+      setResults(results.map((r, i) => i === viewingIndex ? {...r, rotated: Date.now()} : r));
+    } catch (err) {
+      alert(`Rotate failed: ${err.message}`);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleViewerTrash = async () => {
+    if (!viewingAsset) return;
+    if (window.confirm("Are you sure you want to trash this image?")) {
+      setIsProcessing(true);
+      try {
+        await axios.post(`${API_BASE}/trash`, { paths: [viewingAsset.originalPath] });
+        const newResults = results.filter((_, i) => i !== viewingIndex);
+        setResults(newResults);
+        if (newResults.length === 0) setViewingIndex(-1);
+        else if (viewingIndex >= newResults.length) setViewingIndex(newResults.length - 1);
+      } catch (err) {
+        alert(`Trash failed: ${err.message}`);
+      } finally {
+        setIsProcessing(false);
+      }
+    }
+  };
+
+  const handleViewerAddTag = async () => {
+    if (!viewingAsset || !tagInput) return;
+    setIsProcessing(true);
+    try {
+      await axios.post(`${API_BASE}/tags`, {
+        paths: [viewingAsset.originalPath],
+        tag: tagInput,
+        action: 'add'
+      });
+      setViewerTags([...viewerTags, tagInput]);
+      setTagInput('');
+    } catch (err) {
+      alert(`Tagging failed: ${err.message}`);
     } finally {
       setIsProcessing(false);
     }
@@ -523,8 +588,42 @@ function App() {
             )}
           </div>
           
-          <div style={{ color: 'white', marginTop: '1rem', background: 'rgba(0,0,0,0.5)', padding: '0.5rem 1rem', borderRadius: '0.5rem', zIndex: 110 }} onClick={e => e.stopPropagation()}>
-            {viewingIndex + 1} of {results.length} - {viewingAsset.originalPath}
+          <div style={{ color: 'white', marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', alignItems: 'center', background: 'rgba(0,0,0,0.8)', padding: '1rem', borderRadius: '0.5rem', zIndex: 110, width: '80vw' }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
+              <div style={{ fontSize: '0.9rem', color: '#94a3b8' }}>
+                {viewingIndex + 1} of {results.length} - {viewingAsset.originalPath}
+              </div>
+              <div style={{ display: 'flex', gap: '1rem' }}>
+                <button className="btn-action" onClick={handleViewerRotate} disabled={isProcessing}>
+                  <RotateCw size={18} /> Rotate
+                </button>
+                <button className="btn-action btn-danger" onClick={handleViewerTrash} disabled={isProcessing}>
+                  <Trash2 size={18} /> Trash
+                </button>
+              </div>
+            </div>
+            <div style={{ display: 'flex', width: '100%', gap: '1rem', alignItems: 'center', marginTop: '0.5rem' }}>
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', flex: 1 }}>
+                {viewerTags.length === 0 ? <span style={{ color: '#64748b', fontSize: '0.9rem' }}>No tags</span> : null}
+                {viewerTags.map((t, i) => (
+                  <span key={i} style={{ background: '#3b82f6', padding: '0.2rem 0.5rem', borderRadius: '0.25rem', fontSize: '0.85rem' }}>
+                    {t}
+                  </span>
+                ))}
+              </div>
+              <div className="tag-input-group">
+                <input 
+                  type="text" 
+                  placeholder="Add a new tag..." 
+                  value={tagInput}
+                  onChange={e => setTagInput(e.target.value)}
+                  style={{ padding: '0.5rem', width: '200px' }}
+                />
+                <button className="btn-action" onClick={handleViewerAddTag} disabled={isProcessing || !tagInput}>
+                  <Tag size={18} /> Add Tag
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

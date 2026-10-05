@@ -230,6 +230,16 @@ def get_local_image(path: str, size: str = "large"):
             
     return FileResponse(path)
 
+@app.get("/api/tags")
+def get_tags(path: str):
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="File not found")
+    try:
+        tags = scanner.read_image_tags(Path(path))
+        return {"status": "success", "tags": tags}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/api/tags")
 def manage_tags(req: TagAction):
     count = 0
