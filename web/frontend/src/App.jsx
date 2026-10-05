@@ -80,6 +80,17 @@ function App() {
     await axios.post(`${API_BASE}/tag-list/full`, newTags).catch(console.error);
   };
 
+  const handleMoveTag = async (oldCategory, newCategory, tagToMove) => {
+    if (!newCategory) return;
+    const newTags = { ...globalTags };
+    newTags[oldCategory] = newTags[oldCategory].filter(t => t !== tagToMove);
+    if (!newTags[newCategory].includes(tagToMove)) {
+      newTags[newCategory] = [...newTags[newCategory], tagToMove];
+    }
+    setGlobalTags(newTags);
+    await axios.post(`${API_BASE}/tag-list/full`, newTags).catch(console.error);
+  };
+
   useEffect(() => {
     if (viewingAsset && viewingAsset.originalPath) {
       setViewerTags([]); // clear while loading
@@ -628,6 +639,7 @@ function App() {
                     style={{ padding: '0.5rem', width: '150px' }}
                     data-bwignore="true"
                     autocomplete="off"
+                    onKeyDown={e => e.key === 'Enter' && tagInput && selectedPaths.size > 0 && !isProcessing && handleMassAction('addTag')}
                   />
                   <button className="btn-action" onClick={() => handleMassAction('addTag')} disabled={isProcessing || selectedPaths.size === 0}>
                     <Tag size={18} /> Add
@@ -793,6 +805,7 @@ function App() {
                   style={{ padding: '0.5rem', width: '200px' }}
                   data-bwignore="true"
                   autocomplete="off"
+                  onKeyDown={e => e.key === 'Enter' && tagInput && !isProcessing && handleViewerAddTag()}
                 />
                 <button className="btn-action" onClick={handleViewerAddTag} disabled={isProcessing || !tagInput}>
                   <Tag size={18} /> Add Tag
@@ -841,6 +854,17 @@ function App() {
                   {globalTags[category].map((tag, i) => (
                     <span key={i} style={{ background: '#334155', padding: '0.3rem 0.6rem', borderRadius: '0.25rem', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                       {tag}
+                      <select 
+                        style={{ background: 'transparent', color: '#94a3b8', border: 'none', outline: 'none', cursor: 'pointer', appearance: 'none', padding: '0 4px' }}
+                        value=""
+                        onChange={(e) => handleMoveTag(category, e.target.value, tag)}
+                        title="Move to category"
+                      >
+                        <option value="" disabled>▶</option>
+                        {Object.keys(globalTags).filter(c => c !== category).map(c => (
+                          <option key={c} value={c}>{c}</option>
+                        ))}
+                      </select>
                       <X size={14} style={{ cursor: 'pointer', color: '#ef4444' }} onClick={() => handleRemoveTagFromCategory(category, tag)} />
                     </span>
                   ))}
