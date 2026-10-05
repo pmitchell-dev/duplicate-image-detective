@@ -688,6 +688,11 @@ function App() {
           onClick={() => setViewingIndex(-1)}
         >
           <div style={{ position: 'absolute', top: '1rem', right: '1rem', display: 'flex', gap: '1rem', zIndex: 110 }}>
+            {isCropping && cropBox && !isDrawing && cropBox.width > 0 && (
+              <button className="btn-action" onClick={handleCropSubmit} disabled={isProcessing} style={{ background: '#10b981' }}>
+                <CheckSquare size={18} /> Confirm Split
+              </button>
+            )}
             <button className="btn-action" onClick={(e) => { e.stopPropagation(); setIsCropping(!isCropping); setCropBox(null); }} style={{ background: isCropping ? '#f59e0b' : 'rgba(255,255,255,0.1)' }}>
               <Crop size={18} /> {isCropping ? 'Cancel Crop' : 'Manual Crop'}
             </button>
@@ -735,16 +740,6 @@ function App() {
                   backgroundColor: 'rgba(59, 130, 246, 0.2)',
                   pointerEvents: 'none'
                 }} />
-              )}
-              {isCropping && cropBox && !isDrawing && cropBox.width > 0 && (
-                <button 
-                  className="btn-action" 
-                  onClick={handleCropSubmit} 
-                  style={{ position: 'absolute', left: '50%', bottom: '-3rem', transform: 'translateX(-50%)', background: '#10b981', zIndex: 110 }}
-                  disabled={isProcessing}
-                >
-                  <Crop size={18} /> Confirm Split
-                </button>
               )}
             </div>
             
