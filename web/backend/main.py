@@ -6,6 +6,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import sys
 import os
+import shutil
+import time
 from pathlib import Path
 from PIL import Image
 
@@ -143,10 +145,17 @@ def rotate_images(req: PathsAction):
 @app.post("/api/trash")
 def trash_images(req: PathsAction):
     trashed = 0
+    recycle_dir = "/mnt/backups/recyclebin"
+    os.makedirs(recycle_dir, exist_ok=True)
     for p in req.paths:
         try:
             if os.path.exists(p):
-                send2trash(p)
+                basename = os.path.basename(p)
+                dest = os.path.join(recycle_dir, basename)
+                if os.path.exists(dest):
+                    name, ext = os.path.splitext(basename)
+                    dest = os.path.join(recycle_dir, f"{name}_{int(time.time())}{ext}")
+                shutil.move(p, dest)
                 trashed += 1
         except Exception as e:
             print(f"Error trashing {p}: {e}")
