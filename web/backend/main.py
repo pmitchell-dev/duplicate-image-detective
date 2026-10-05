@@ -59,6 +59,111 @@ def search_immich(req: SearchQuery):
         raise HTTPException(status_code=500, detail=str(result))
     return {"assets": result}
 
+@app.get("/api/folders")
+def get_folders():
+    base_dir = "/mnt/backups/family_photos"
+    folders = []
+    if os.path.exists(base_dir):
+        for root, dirs, files in os.walk(base_dir):
+            rel_path = os.path.relpath(root, base_dir)
+            if rel_path == ".":
+                rel_path = ""
+            folders.append(rel_path)
+    return {"folders": sorted(folders)}
+
+@app.get("/api/folder/images")
+def get_folder_images(folder: str = ""):
+    base_dir = "/mnt/backups/family_photos"
+    target_dir = os.path.join(base_dir, folder)
+    if not os.path.abspath(target_dir).startswith(os.path.abspath(base_dir)):
+        raise HTTPException(status_code=400, detail="Invalid path")
+    
+    if not os.path.exists(target_dir):
+        return {"assets": []}
+
+    assets = []
+    for f in os.listdir(target_dir):
+        p = os.path.join(target_dir, f)
+        if os.path.isfile(p) and f.lower().endswith(('.png', '.jpg', '.jpeg', '.tiff', '.tif', '.bmp', '.gif', '.webp')):
+            assets.append({
+                "id": p,
+                "originalFileName": f,
+                "originalPath": p,
+                "isLocal": True
+            })
+    return {"assets": sorted(assets, key=lambda x: x['originalFileName'])}
+
+class SplitRequest(BaseModel):
+    path: str
+
+@app.post("/api/split")
+def split_image(req: SplitRequest):
+    try:
+        import cv2
+        import numpy as np
+        
+        path = req.path
+        if not os.path.exists(path):
+            raise HTTPException(status_code=404, detail="File not found")
+            
+        img = cv2.imread(path)
+        if img is None:
+            raise HTTPException(status_code=400, detail="Could not read image")
+            
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        
+        # Invert so black regions are background and white regions are photos (if background is white)
+        # Actually scanned pages are light, photos are dark.
+        # Thresholding: anything darker than 200 becomes white (255) for contouring
+        _, thresh = cv2.threshold(gray, 220, 255, cv2.THRESH_BINARY_INV)
+        
+        # Clean up noise
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
+        closed = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel, iterations=3)
+        dilated = cv2.dilate(closed, kernel, iterations=2)
+        
+        contours, _ = cv2.findContours(dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
+        min_area = img.shape[0] * img.shape[1] * 0.02 # At least 2% of image
+        photo_rects = []
+        for c in contours:
+            area = cv2.contourArea(c)
+            if area > min_area:
+                x, y, w, h = cv2.boundingRect(c)
+                photo_rects.append((x, y, w, h))
+                
+        if not photo_rects:
+            raise HTTPException(status_code=400, detail="Could not detect distinct photos in the image.")
+            
+        # Crop using Pillow to retain metadata if any
+        base_dir = os.path.dirname(path)
+        filename = os.path.basename(path)
+        name, ext = os.path.splitext(filename)
+        
+        saved_paths = []
+        with Image.open(path) as pil_img:
+            # Sort rects top-to-bottom, left-to-right roughly
+            photo_rects.sort(key=lambda r: (r[1] // 100, r[0]))
+            
+            for i, (x, y, w, h) in enumerate(photo_rects):
+                cropped = pil_img.crop((x, y, x+w, y+h))
+                new_path = os.path.join(base_dir, f"{name}_split{i+1}{ext}")
+                
+                kwargs = {}
+                for key in ["exif", "xmp", "icc_profile"]:
+                    if key in pil_img.info:
+                        kwargs[key] = pil_img.info[key]
+                if pil_img.format in ["JPEG", "MPO"]:
+                    kwargs["quality"] = 95
+                    
+                cropped.save(new_path, **kwargs)
+                saved_paths.append(new_path)
+            
+        # Optionally move original to recycle bin? Let frontend handle it if they want.
+        return {"status": "success", "parts": saved_paths}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/api/people")
 def get_people(req: BaseQuery):
     success, result = scanner.immich_get_people(req.server_url, req.api_key)

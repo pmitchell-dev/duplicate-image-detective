@@ -1,13 +1,15 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Search, Server, Key, AlertCircle, Trash2, RotateCw, Tag, CheckSquare, Square, Users, User } from 'lucide-react';
+import { Search, Server, Key, AlertCircle, Trash2, RotateCw, Tag, CheckSquare, Square, Users, User, Folder, Scissors, ChevronLeft, ChevronRight, X } from 'lucide-react';
 
 const API_BASE = '/api';
 
 function App() {
   const [serverUrl, setServerUrl] = useState(() => localStorage.getItem('pic_serverUrl') || '');
   const [apiKey, setApiKey] = useState(() => localStorage.getItem('pic_apiKey') || '');
-  const [mode, setMode] = useState('smart'); // 'smart' or 'people'
+  const [mode, setMode] = useState('smart'); // 'smart', 'people', 'folder'
+  const [folders, setFolders] = useState([]);
+  const [selectedFolder, setSelectedFolder] = useState('');
   
   const [query, setQuery] = useState('');
   const [people, setPeople] = useState([]);
@@ -25,13 +27,48 @@ function App() {
   const [isProcessing, setIsProcessing] = useState(false);
   
   // Image Viewer State
-  const [viewingAsset, setViewingAsset] = useState(null);
+  const [viewingIndex, setViewingIndex] = useState(-1);
+  const viewingAsset = viewingIndex >= 0 ? results[viewingIndex] : null;
+
+  // Load folders on mount
+  useEffect(() => {
+    axios.get(`${API_BASE}/folders`).then(res => {
+      setFolders(res.data.folders || []);
+    }).catch(console.error);
+  }, []);
+
+  // Keyboard navigation for image viewer
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (viewingIndex >= 0) {
+        if (e.key === 'ArrowLeft') {
+          e.preventDefault();
+          if (viewingIndex > 0) setViewingIndex(viewingIndex - 1);
+        }
+        if (e.key === 'ArrowRight') {
+          e.preventDefault();
+          if (viewingIndex < results.length - 1) setViewingIndex(viewingIndex + 1);
+        }
+        if (e.key === 'Escape') setViewingIndex(-1);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [viewingIndex, results.length]);
 
   // Save credentials on change
   useEffect(() => {
     localStorage.setItem('pic_serverUrl', serverUrl);
     localStorage.setItem('pic_apiKey', apiKey);
   }, [serverUrl, apiKey]);
+  
+  const getAssetImgSrc = (asset, full = false) => {
+    if (asset.isLocal) {
+      return `${API_BASE}/image?path=${encodeURIComponent(asset.originalPath)}`;
+    }
+    const size = full ? 'large' : 'preview';
+    return `${getNormalizedServerUrl()}/api/assets/${asset.id}/thumbnail?size=${size}&x-api-key=${apiKey}`;
+  };
   
   const getNormalizedServerUrl = () => {
     let url = serverUrl.trim().replace(/\/$/, '');
@@ -124,6 +161,36 @@ function App() {
       setResults([]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadFolderImages = async (folder) => {
+    setLoading(true);
+    setError('');
+    setSelectedPaths(new Set());
+    try {
+      const response = await axios.get(`${API_BASE}/folder/images?folder=${encodeURIComponent(folder)}`);
+      setResults(response.data.assets || []);
+    } catch (err) {
+      setError(err.response?.data?.detail || err.message);
+      setResults([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAutoSplit = async () => {
+    if (!viewingAsset || !viewingAsset.isLocal) return;
+    setIsProcessing(true);
+    try {
+      const response = await axios.post(`${API_BASE}/split`, { path: viewingAsset.originalPath });
+      alert(`Successfully split image into ${response.data.parts.length} parts!`);
+      loadFolderImages(selectedFolder);
+      setViewingIndex(-1);
+    } catch (err) {
+      alert(`Split failed: ${err.response?.data?.detail || err.message}`);
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -222,11 +289,14 @@ function App() {
             </div>
 
             <div className="input-group full-width" style={{ display: 'flex', flexDirection: 'row', gap: '1rem', marginTop: '1rem' }}>
-              <button type="button" className={`btn-action ${mode === 'smart' ? 'btn-primary' : ''}`} onClick={() => setMode('smart')} style={{ flex: 1, justifyContent: 'center', background: mode === 'smart' ? 'var(--primary)' : 'rgba(255,255,255,0.1)' }}>
+              <button type="button" className={`btn-action ${mode === 'smart' ? 'btn-primary' : ''}`} onClick={() => { setMode('smart'); setResults([]); }} style={{ flex: 1, justifyContent: 'center', background: mode === 'smart' ? 'var(--primary)' : 'rgba(255,255,255,0.1)' }}>
                 <Search size={18} /> Smart Search
               </button>
               <button type="button" className={`btn-action ${mode === 'people' ? 'btn-primary' : ''}`} onClick={() => { setMode('people'); loadPeople(); }} style={{ flex: 1, justifyContent: 'center', background: mode === 'people' ? '#3b82f6' : 'rgba(255,255,255,0.1)' }}>
                 <Users size={18} /> People Search
+              </button>
+              <button type="button" className={`btn-action ${mode === 'folder' ? 'btn-primary' : ''}`} onClick={() => { setMode('folder'); loadFolderImages(selectedFolder); }} style={{ flex: 1, justifyContent: 'center', background: mode === 'folder' ? '#10b981' : 'rgba(255,255,255,0.1)' }}>
+                <Folder size={18} /> Local Folders
               </button>
             </div>
             
@@ -258,6 +328,35 @@ function App() {
                 <div className="input-group full-width">
                   <button type="submit" className="btn-search" disabled={loading || !serverUrl || !apiKey || !query}>
                     {loading ? <div className="spinner"></div> : <><Search size={20} /> Search Images</>}
+                  </button>
+                </div>
+              </>
+            )}
+
+            {mode === 'folder' && (
+              <>
+                <div className="input-group full-width">
+                  <label>Select Folder</label>
+                  <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                    <Folder size={18} style={{ position: 'absolute', left: '12px', color: 'var(--text-muted)' }} />
+                    <select
+                      value={selectedFolder}
+                      onChange={(e) => {
+                        setSelectedFolder(e.target.value);
+                        loadFolderImages(e.target.value);
+                      }}
+                      style={{ paddingLeft: '2.5rem', width: '100%', padding: '0.75rem', borderRadius: '0.5rem', background: 'rgba(0,0,0,0.2)', color: 'white', border: '1px solid rgba(255,255,255,0.1)' }}
+                    >
+                      <option value="">(Root folder)</option>
+                      {folders.map(f => (
+                        <option key={f} value={f}>{f}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <div className="input-group full-width">
+                  <button type="button" className="btn-search" onClick={() => loadFolderImages(selectedFolder)} disabled={loading} style={{ background: '#10b981' }}>
+                    {loading ? <div className="spinner"></div> : <><Folder size={20} /> Reload Folder</>}
                   </button>
                 </div>
               </>
@@ -345,7 +444,7 @@ function App() {
                     key={asset.id} 
                     className={`asset-card ${isSelected ? 'selected' : ''}`}
                     onClick={() => toggleSelection(asset.originalPath)}
-                    onDoubleClick={() => setViewingAsset(asset)}
+                    onDoubleClick={() => setViewingIndex(index)}
                   >
                     <div className="checkbox-container">
                       <input 
@@ -379,18 +478,52 @@ function App() {
         <div 
           style={{
             position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-            backgroundColor: 'rgba(0,0,0,0.9)', zIndex: 100,
+            backgroundColor: 'rgba(0,0,0,0.95)', zIndex: 100,
             display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center'
           }}
-          onClick={() => setViewingAsset(null)}
+          onClick={() => setViewingIndex(-1)}
         >
-          <img 
-            src={`${getNormalizedServerUrl()}/api/assets/${viewingAsset.id}/thumbnail?size=preview&x-api-key=${apiKey}`}
-            style={{ maxHeight: '90vh', maxWidth: '90vw', objectFit: 'contain' }}
-            alt={viewingAsset.originalFileName}
-          />
-          <div style={{ color: 'white', marginTop: '1rem', background: 'rgba(0,0,0,0.5)', padding: '0.5rem 1rem', borderRadius: '0.5rem' }}>
-            {viewingAsset.originalPath}
+          <div style={{ position: 'absolute', top: '1rem', right: '1rem', display: 'flex', gap: '1rem', zIndex: 110 }}>
+            {viewingAsset.isLocal && (
+              <button className="btn-action" onClick={(e) => { e.stopPropagation(); handleAutoSplit(); }} disabled={isProcessing} style={{ background: '#3b82f6' }}>
+                <Scissors size={18} /> {isProcessing ? 'Processing...' : 'Auto Split Image'}
+              </button>
+            )}
+            <button className="btn-action" onClick={() => setViewingIndex(-1)} style={{ background: 'rgba(255,255,255,0.1)' }}>
+              <X size={18} /> Close
+            </button>
+          </div>
+          
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', height: '80vh' }} onClick={e => e.stopPropagation()}>
+            {viewingIndex > 0 && (
+              <button 
+                className="btn-action" 
+                onClick={(e) => { e.stopPropagation(); setViewingIndex(viewingIndex - 1); }} 
+                style={{ position: 'absolute', left: '1rem', padding: '1rem', borderRadius: '50%', zIndex: 110 }}
+              >
+                <ChevronLeft size={32} />
+              </button>
+            )}
+            
+            <img 
+              src={getAssetImgSrc(viewingAsset, true)}
+              style={{ maxHeight: '100%', maxWidth: '80vw', objectFit: 'contain' }}
+              alt={viewingAsset.originalFileName}
+            />
+            
+            {viewingIndex < results.length - 1 && (
+              <button 
+                className="btn-action" 
+                onClick={(e) => { e.stopPropagation(); setViewingIndex(viewingIndex + 1); }} 
+                style={{ position: 'absolute', right: '1rem', padding: '1rem', borderRadius: '50%', zIndex: 110 }}
+              >
+                <ChevronRight size={32} />
+              </button>
+            )}
+          </div>
+          
+          <div style={{ color: 'white', marginTop: '1rem', background: 'rgba(0,0,0,0.5)', padding: '0.5rem 1rem', borderRadius: '0.5rem', zIndex: 110 }} onClick={e => e.stopPropagation()}>
+            {viewingIndex + 1} of {results.length} - {viewingAsset.originalPath}
           </div>
         </div>
       )}
