@@ -9,6 +9,7 @@ import sys
 import os
 import shutil
 import time
+import json
 from pathlib import Path
 from PIL import Image
 Image.MAX_IMAGE_PIXELS = None
