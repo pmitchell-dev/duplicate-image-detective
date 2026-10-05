@@ -313,16 +313,23 @@ TAG_FILE_PATH = "/mnt/backups/piccurator/tags.json"
 DEFAULT_TAGS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "default_tags.json")
 
 def get_global_tags():
-    if not os.path.exists(TAG_FILE_PATH):
-        if os.path.exists(DEFAULT_TAGS_PATH):
-            shutil.copy(DEFAULT_TAGS_PATH, TAG_FILE_PATH)
-        else:
-            return {}
     try:
+        if not os.path.exists(TAG_FILE_PATH):
+            if os.path.exists(DEFAULT_TAGS_PATH):
+                os.makedirs(os.path.dirname(TAG_FILE_PATH), exist_ok=True)
+                shutil.copy(DEFAULT_TAGS_PATH, TAG_FILE_PATH)
+            else:
+                return {}
         with open(TAG_FILE_PATH, "r") as f:
             return json.load(f)
-    except:
-        return {}
+    except Exception as e:
+        print(f"Error loading global tags: {e}")
+        # Fallback to defaults if we can't read/write to the mount
+        try:
+            with open(DEFAULT_TAGS_PATH, "r") as f:
+                return json.load(f)
+        except:
+            return {}
 
 def save_global_tags(tags_data):
     os.makedirs(os.path.dirname(TAG_FILE_PATH), exist_ok=True)
