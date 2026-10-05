@@ -11,6 +11,7 @@ import shutil
 import time
 from pathlib import Path
 from PIL import Image
+Image.MAX_IMAGE_PIXELS = None
 
 # Add root project dir to path so we can import scanner
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
