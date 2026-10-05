@@ -296,15 +296,19 @@ function App() {
   };
 
   const handleViewerAddTag = async () => {
-    if (!viewingAsset || !tagInput) return;
+    const cleanedTag = tagInput.trim();
+    if (!viewingAsset || !cleanedTag) return;
     setIsProcessing(true);
     try {
       await axios.post(`${API_BASE}/tags`, {
         paths: [viewingAsset.originalPath],
-        tag: tagInput,
+        tag: cleanedTag,
         action: 'add'
       });
-      setViewerTags([...viewerTags, tagInput]);
+      
+      if (!viewerTags.some(t => t.toLowerCase() === cleanedTag.toLowerCase())) {
+        setViewerTags([...viewerTags, cleanedTag]);
+      }
       
       // Automatically register to global list
       await axios.post(`${API_BASE}/tag-list`, {
@@ -622,6 +626,8 @@ function App() {
                     onChange={e => setTagInput(e.target.value)}
                     list="globalTagsList"
                     style={{ padding: '0.5rem', width: '150px' }}
+                    data-bwignore="true"
+                    autocomplete="off"
                   />
                   <button className="btn-action" onClick={() => handleMassAction('addTag')} disabled={isProcessing || selectedPaths.size === 0}>
                     <Tag size={18} /> Add
@@ -785,6 +791,8 @@ function App() {
                   onChange={e => setTagInput(e.target.value)}
                   list="globalTagsList"
                   style={{ padding: '0.5rem', width: '200px' }}
+                  data-bwignore="true"
+                  autocomplete="off"
                 />
                 <button className="btn-action" onClick={handleViewerAddTag} disabled={isProcessing || !tagInput}>
                   <Tag size={18} /> Add Tag
