@@ -349,6 +349,23 @@ function App() {
     }
   };
 
+  const handleViewerRemoveTag = async (tagToRemove) => {
+    if (!viewingAsset || !tagToRemove) return;
+    setIsProcessing(true);
+    try {
+      await axios.post(`${API_BASE}/tags`, {
+        paths: [viewingAsset.originalPath],
+        tag: tagToRemove,
+        action: 'remove'
+      });
+      setViewerTags(viewerTags.filter(t => t !== tagToRemove));
+    } catch (err) {
+      alert(`Tag removal failed: ${err.message}`);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   const handleCropMouseDown = (e) => {
     if (!isCropping || !imageRef.current) return;
     e.preventDefault();
@@ -809,8 +826,9 @@ function App() {
               <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', flex: 1 }}>
                 {viewerTags.length === 0 ? <span style={{ color: '#64748b', fontSize: '0.9rem' }}>No tags</span> : null}
                 {viewerTags.map((t, i) => (
-                  <span key={i} style={{ background: '#3b82f6', padding: '0.2rem 0.5rem', borderRadius: '0.25rem', fontSize: '0.85rem' }}>
+                  <span key={i} style={{ background: '#3b82f6', padding: '0.2rem 0.5rem', borderRadius: '0.25rem', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
                     {t}
+                    <X size={12} style={{ cursor: 'pointer', opacity: 0.8 }} onClick={() => handleViewerRemoveTag(t)} />
                   </span>
                 ))}
               </div>
