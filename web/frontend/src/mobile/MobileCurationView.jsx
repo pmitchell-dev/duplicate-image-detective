@@ -284,34 +284,41 @@ export default function MobileCurationView({
                 </button>
               </div>
 
-              <div style={{ overflowY: 'auto', display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
-                {allAvailableTags.length === 0 && (
+              <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                {Object.keys(globalTags || {}).length === 0 && (
                   <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>No global tags configured.</span>
                 )}
                 
-                {allAvailableTags.map(tag => {
-                  const isActive = viewerTags.includes(tag);
-                  return (
-                    <button 
-                      key={tag}
-                      onClick={() => handleToggleTag(tag)}
-                      disabled={isProcessing}
-                      style={{ 
-                        padding: '10px 18px', 
-                        borderRadius: '32px', 
-                        backgroundColor: isActive ? '#3b82f6' : 'transparent', 
-                        color: isActive ? 'white' : '#cbd5e1', 
-                        border: isActive ? '1px solid #3b82f6' : '1px solid rgba(255,255,255,0.2)', 
-                        fontWeight: '600', 
-                        fontSize: '15px',
-                        opacity: isProcessing ? 0.7 : 1,
-                        transition: 'all 0.2s'
-                      }}
-                    >
-                       {tag}
-                    </button>
-                  );
-                })}
+                {Object.entries(globalTags || {}).map(([category, tags]) => (
+                  <div key={category} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <h4 style={{ margin: 0, color: '#94a3b8', fontSize: '13px', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 'bold' }}>{category}</h4>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                      {tags.map(tag => {
+                        const isActive = viewerTags.includes(tag);
+                        return (
+                          <button 
+                            key={tag}
+                            onClick={() => handleToggleTag(tag)}
+                            disabled={isProcessing}
+                            style={{ 
+                              padding: '8px 16px', 
+                              borderRadius: '32px', 
+                              backgroundColor: isActive ? '#3b82f6' : 'transparent', 
+                              color: isActive ? 'white' : '#cbd5e1', 
+                              border: isActive ? '1px solid #3b82f6' : '1px solid rgba(255,255,255,0.2)', 
+                              fontWeight: '600', 
+                              fontSize: '14px',
+                              opacity: isProcessing ? 0.7 : 1,
+                              transition: 'all 0.2s'
+                            }}
+                          >
+                             {tag}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
               </div>
             </motion.div>
           </>

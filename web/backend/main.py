@@ -267,7 +267,7 @@ def test_connection(req: BaseQuery):
         raise HTTPException(status_code=500, detail=f"Connection failed: {str(e)}")
 
 @app.get("/api/image")
-def get_local_image(path: str, size: str = "large"):
+def get_local_image(path: str, size: str = "large", t: str = None):
     if not os.path.exists(path):
         raise HTTPException(status_code=404, detail="File not found")
         
@@ -276,6 +276,17 @@ def get_local_image(path: str, size: str = "large"):
     # Browsers cannot display .tif/.tiff natively. 
     # Also, we should resize to preview if requested to speed up loading.
     if ext in ['.tif', '.tiff'] or size == "preview":
+        import hashlib
+        CACHE_DIR = "/mnt/backups/piccurator/cache"
+        os.makedirs(CACHE_DIR, exist_ok=True)
+        
+        # Cache key based on path, size, and rotation timestamp (t)
+        cache_key = hashlib.md5(f"{path}_{size}_{t}".encode()).hexdigest()
+        cached_path = os.path.join(CACHE_DIR, f"{cache_key}.jpg")
+        
+        if os.path.exists(cached_path):
+            return FileResponse(cached_path)
+            
         try:
             with Image.open(path) as img:
                 if img.mode != 'RGB':
@@ -285,20 +296,28 @@ def get_local_image(path: str, size: str = "large"):
                 if size == "preview":
                     img.thumbnail((800, 800))
                 else:
-                    # Even if large, resize it slightly if it's ridiculously massive (e.g. 10k pixels) just to prevent browser crash,
-                    # but typically album pages are fine to serve as long as they're JPEGs.
                     img.thumbnail((3000, 3000))
                     
-                buf = io.BytesIO()
-                img.save(buf, format='JPEG', quality=85)
-                buf.seek(0)
-                return StreamingResponse(buf, media_type="image/jpeg")
+                img.save(cached_path, format='JPEG', quality=85)
+                return FileResponse(cached_path)
         except Exception as e:
             # If conversion fails, fallback to sending the raw file
             print(f"Failed to convert image {path}: {e}")
             return FileResponse(path)
             
     return FileResponse(path)
+
+@app.get("/api/cache-size")
+def get_cache_size():
+    total_size = 0
+    CACHE_DIR = "/mnt/backups/piccurator/cache"
+    if os.path.exists(CACHE_DIR):
+        for dirpath, _, filenames in os.walk(CACHE_DIR):
+            for f in filenames:
+                fp = os.path.join(dirpath, f)
+                if not os.path.islink(fp):
+                    total_size += os.path.getsize(fp)
+    return {"size_bytes": total_size}
 
 @app.get("/api/tags")
 def get_tags(path: str):

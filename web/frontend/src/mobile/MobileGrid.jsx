@@ -1,5 +1,5 @@
 import React from 'react';
-import { Folder } from 'lucide-react';
+import { Folder, Search } from 'lucide-react';
 
 export default function MobileGrid({
   results,
@@ -7,10 +7,14 @@ export default function MobileGrid({
   selectedFolder,
   setSelectedFolder,
   loadFolderImages,
-  onAssetClick,
+  onImageClick,
   getAssetImgSrc,
   loading,
-  error
+  error,
+  query,
+  setQuery,
+  handleSmartSearch,
+  logo
 }) {
   return (
     <div style={{ padding: '8px', backgroundColor: '#0f172a', minHeight: '100vh', color: 'white' }}>
@@ -19,12 +23,53 @@ export default function MobileGrid({
       <div style={{ 
         position: 'sticky', 
         top: 0, 
-        backgroundColor: 'rgba(15, 23, 42, 0.9)', 
+        backgroundColor: 'rgba(15, 23, 42, 0.95)', 
         backdropFilter: 'blur(10px)',
         zIndex: 10, 
         paddingTop: '8px',
-        paddingBottom: '16px' 
+        paddingBottom: '16px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '12px'
       }}>
+        {/* Header Title / Logo */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '4px 0' }}>
+          {logo && <img src={logo} alt="Logo" style={{ width: '28px', height: '28px', objectFit: 'contain' }} />}
+          <h1 style={{ margin: 0, fontSize: '20px', fontWeight: 'bold', color: '#f8fafc', letterSpacing: '0.5px' }}>PicCurator</h1>
+        </div>
+
+        {/* Smart Search Bar */}
+        <form onSubmit={handleSmartSearch} style={{ 
+          display: 'flex', 
+          alignItems: 'center', 
+          backgroundColor: '#1e293b', 
+          padding: '12px', 
+          borderRadius: '16px',
+          border: '1px solid rgba(255,255,255,0.05)'
+        }}>
+           <Search size={20} style={{ marginRight: '12px', color: '#60a5fa' }} />
+           <input 
+             type="text"
+             placeholder="Smart Search (e.g., 'dogs', 'beach')"
+             value={query || ''}
+             onChange={(e) => setQuery(e.target.value)}
+             style={{ 
+               flex: 1, 
+               backgroundColor: 'transparent', 
+               border: 'none', 
+               color: 'white', 
+               outline: 'none', 
+               fontSize: '16px'
+             }}
+           />
+           {query && (
+             <button type="submit" disabled={loading} style={{ backgroundColor: '#3b82f6', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '8px', fontWeight: 'bold', opacity: loading ? 0.5 : 1 }}>
+               Go
+             </button>
+           )}
+        </form>
+
+        {/* Local Folder Dropdown */}
         <div style={{ 
           display: 'flex', 
           alignItems: 'center', 
@@ -70,7 +115,7 @@ export default function MobileGrid({
           {results.map((asset, index) => (
             <div 
               key={asset.id || index} 
-              onClick={() => onAssetClick(index)}
+              onClick={() => onImageClick(index)}
               style={{ 
                 aspectRatio: '1/1', 
                 overflow: 'hidden', 

@@ -7,6 +7,25 @@ import MobileApp from './mobile/MobileApp';
 
 const API_BASE = '/api';
 
+function CacheCounter() {
+  const [size, setSize] = useState(0);
+  useEffect(() => {
+    const fetchSize = () => {
+      axios.get(`${API_BASE}/cache-size`).then(res => setSize(res.data.size_bytes)).catch(() => {});
+    };
+    fetchSize();
+    const int = setInterval(fetchSize, 5000);
+    return () => clearInterval(int);
+  }, []);
+  const mb = (size / (1024 * 1024)).toFixed(2);
+  if (size === 0) return null; // Don't show if empty or error
+  return (
+    <div style={{ position: 'fixed', top: 12, right: 12, background: 'rgba(0,0,0,0.8)', color: '#10b981', padding: '6px 10px', borderRadius: '8px', zIndex: 9999, fontSize: '13px', fontWeight: 'bold', border: '1px solid rgba(16,185,129,0.3)' }}>
+      Cache: {mb} MB
+    </div>
+  );
+}
+
 function App() {
   const isTouchDevice = useIsTouchDevice();
   const [serverUrl, setServerUrl] = useState(() => localStorage.getItem('pic_serverUrl') || '');
@@ -513,9 +532,15 @@ function App() {
         error={error}
         loading={loading}
         getAssetImgSrc={getAssetImgSrc}
+        query={query}
+        setQuery={setQuery}
+        handleSmartSearch={handleSmartSearch}
+        logo={logo}
       />
-    );
-  }
+      <CacheCounter />
+    </>
+  );
+}
 
   return (
     <div className="app-container">

@@ -14,7 +14,11 @@ export default function MobileApp({
   setResults,
   error,
   loading,
-  getAssetImgSrc
+  getAssetImgSrc,
+  query,
+  setQuery,
+  handleSmartSearch,
+  logo
 }) {
   const [viewingIndex, setViewingIndex] = useState(-1);
 
