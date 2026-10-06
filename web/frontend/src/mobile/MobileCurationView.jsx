@@ -138,6 +138,10 @@ export default function MobileCurationView({
 
   return (
     <div style={{ position: 'fixed', inset: 0, backgroundColor: 'black', zIndex: 100, display: 'flex', flexDirection: 'column' }}>
+      <style>{`
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+      `}</style>
       
       {/* Top Bar */}
       <div style={{ position: 'absolute', top: 0, left: 0, right: 0, padding: '16px', zIndex: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -205,36 +209,47 @@ export default function MobileCurationView({
              <span style={{ fontSize: '13px', fontWeight: '500' }}>Rotate</span>
            </button>
            
-           {/* Tags Container (Horizontal scroll) */}
-           <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', padding: '0 8px', flex: 1 }}>
-             {allAvailableTags.length === 0 && (
-               <span style={{ color: '#94a3b8', padding: '14px', fontStyle: 'italic', margin: '0 auto' }}>No global tags configured.</span>
-             )}
-             
-             {allAvailableTags.map(tag => {
-               const isActive = viewerTags.includes(tag);
-               return (
-                 <button 
-                   key={tag}
-                   onClick={() => handleToggleTag(tag)}
-                   disabled={isProcessing}
-                   style={{ 
-                     padding: '14px 24px', 
-                     borderRadius: '32px', 
-                     backgroundColor: isActive ? '#3b82f6' : 'rgba(255,255,255,0.1)', 
-                     color: 'white', 
-                     border: isActive ? '1px solid #60a5fa' : '1px solid transparent', 
-                     fontWeight: 'bold', 
-                     fontSize: '16px',
-                     whiteSpace: 'nowrap',
-                     opacity: isProcessing ? 0.7 : 1,
-                     transition: 'all 0.2s'
-                   }}
-                 >
-                    {tag}
-                 </button>
-               );
-             })}
+           {/* Tags Container Wrapper with Edge Fade */}
+           <div style={{ 
+             flex: 1, 
+             overflow: 'hidden', 
+             WebkitMaskImage: 'linear-gradient(to right, transparent, black 16px, black calc(100% - 16px), transparent)',
+             maskImage: 'linear-gradient(to right, transparent, black 16px, black calc(100% - 16px), transparent)',
+             display: 'flex',
+             alignItems: 'center'
+           }}>
+             {/* Scrollable Container */}
+             <div className="hide-scrollbar" style={{ display: 'flex', gap: '8px', overflowX: 'auto', padding: '12px 24px', width: '100%', alignItems: 'center' }}>
+               {allAvailableTags.length === 0 && (
+                 <span style={{ color: '#94a3b8', padding: '14px', fontStyle: 'italic', margin: '0 auto' }}>No global tags configured.</span>
+               )}
+               
+               {allAvailableTags.map(tag => {
+                 const isActive = viewerTags.includes(tag);
+                 return (
+                   <button 
+                     key={tag}
+                     onClick={() => handleToggleTag(tag)}
+                     disabled={isProcessing}
+                     style={{ 
+                       padding: '10px 18px', 
+                       borderRadius: '32px', 
+                       backgroundColor: isActive ? '#3b82f6' : 'transparent', 
+                       color: isActive ? 'white' : 'rgba(255,255,255,0.9)', 
+                       border: isActive ? '1px solid #3b82f6' : '1px solid rgba(255,255,255,0.4)', 
+                       fontWeight: '600', 
+                       fontSize: '14px',
+                       whiteSpace: 'nowrap',
+                       opacity: isProcessing ? 0.7 : 1,
+                       transition: 'all 0.2s',
+                       flexShrink: 0
+                     }}
+                   >
+                      {tag}
+                   </button>
+                 );
+               })}
+             </div>
            </div>
 
            {/* Transparent spacer to balance the flexbox since we removed the Trash button */}
