@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useDrag } from '@use-gesture/react';
-import { ChevronLeft, ChevronRight, RotateCw, Tag as TagIcon, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, RotateCw, Tag as TagIcon, X, Plus } from 'lucide-react';
 import axios from 'axios';
+import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
 
 const API_BASE = '/api';
 
@@ -19,6 +20,9 @@ export default function MobileCurationView({
   const [isProcessing, setIsProcessing] = useState(false);
   const [viewerTags, setViewerTags] = useState([]);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [newTagInput, setNewTagInput] = useState("");
+  const [sessionCustomTags, setSessionCustomTags] = useState([]);
+  const [isZoomed, setIsZoomed] = useState(false);
 
   const currentAsset = results[index];
 
@@ -59,8 +63,8 @@ export default function MobileCurationView({
   };
 
   const bind = useDrag(({ active, movement: [mx], direction: [xDir], cancel, velocity: [vx] }) => {
-    // Prevent swiping the image if the tag drawer is open
-    if (isDrawerOpen) return;
+    // Prevent swiping the image if the tag drawer is open or if the image is zoomed in
+    if (isDrawerOpen || isZoomed) return;
     
     if (!active && (Math.abs(mx) > window.innerWidth / 3 || vx > 0.5)) {
       if (xDir > 0) {
@@ -118,6 +122,23 @@ export default function MobileCurationView({
     }
   };
 
+  const handleAddCustomTag = () => {
+    const trimmed = newTagInput.trim();
+    if (!trimmed) return;
+    
+    // Add to session custom tags if not present in any list
+    if (!allAvailableTags.includes(trimmed) && !sessionCustomTags.includes(trimmed)) {
+      setSessionCustomTags([...sessionCustomTags, trimmed]);
+    }
+    
+    // Apply tag
+    if (!viewerTags.includes(trimmed)) {
+      handleToggleTag(trimmed);
+    }
+    
+    setNewTagInput("");
+  };
+
   const variants = {
     enter: (direction) => ({ x: direction > 0 ? 1000 : -1000, opacity: 0 }),
     center: { zIndex: 1, x: 0, opacity: 1 },
@@ -163,9 +184,8 @@ export default function MobileCurationView({
         )}
 
         <AnimatePresence initial={false} custom={direction}>
-          <motion.img
+          <motion.div
             key={index}
-            src={getAssetImgSrc(currentAsset, true)}
             custom={direction}
             variants={variants}
             initial="enter"
@@ -175,16 +195,36 @@ export default function MobileCurationView({
               x: { type: "spring", stiffness: 300, damping: 30 },
               opacity: { duration: 0.2 }
             }}
-            style={{
-              position: 'absolute',
-              width: '100%',
-              height: '100%',
-              objectFit: 'contain',
-              userSelect: 'none',
-              touchAction: 'none' // Prevents browser pull-to-refresh while swiping
-            }}
-            draggable={false}
-          />
+            style={{ position: 'absolute', width: '100%', height: '100%' }}
+          >
+            <TransformWrapper
+              initialScale={1}
+              minScale={1}
+              maxScale={4}
+              centerZoomedOut={true}
+              doubleClick={{ step: 0.5 }}
+              pinch={{ step: 5 }}
+              wheel={{ step: 0.1 }}
+              onTransformed={(ref) => {
+                setIsZoomed(ref.state.scale > 1);
+              }}
+              panning={{ disabled: !isZoomed }}
+            >
+              <TransformComponent wrapperStyle={{ width: '100%', height: '100%' }} contentStyle={{ width: '100%', height: '100%' }}>
+                <img
+                  src={getAssetImgSrc(currentAsset, true)}
+                  style={{
+                    width: '100%',
+                    height: '100%',
+                    objectFit: 'contain',
+                    userSelect: 'none',
+                    touchAction: 'none'
+                  }}
+                  draggable={false}
+                />
+              </TransformComponent>
+            </TransformWrapper>
+          </motion.div>
         </AnimatePresence>
 
         {/* Floating Applied Tags Overlay */}
@@ -301,8 +341,78 @@ export default function MobileCurationView({
               </div>
 
               <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '24px' }}>
-                {Object.keys(globalTags || {}).length === 0 && (
+                {Object.keys(globalTags || {}).length === 0 && sessionCustomTags.length === 0 && (
                   <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>No global tags configured.</span>
+                )}
+
+                {/* Add Custom Tag Input */}
+                <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+                  <input 
+                    type="text" 
+                    value={newTagInput}
+                    onChange={(e) => setNewTagInput(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') handleAddCustomTag(); }}
+                    placeholder="Create a new tag..."
+                    style={{
+                      flex: 1,
+                      padding: '12px 16px',
+                      borderRadius: '12px',
+                      backgroundColor: 'rgba(255,255,255,0.05)',
+                      border: '1px solid rgba(255,255,255,0.1)',
+                      color: 'white',
+                      fontSize: '15px',
+                      outline: 'none'
+                    }}
+                  />
+                  <button
+                    onClick={handleAddCustomTag}
+                    disabled={!newTagInput.trim() || isProcessing}
+                    style={{
+                      padding: '0 16px',
+                      borderRadius: '12px',
+                      backgroundColor: newTagInput.trim() ? '#3b82f6' : 'rgba(255,255,255,0.1)',
+                      color: newTagInput.trim() ? 'white' : '#64748b',
+                      border: 'none',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      transition: 'all 0.2s'
+                    }}
+                  >
+                    <Plus size={20} />
+                  </button>
+                </div>
+
+                {/* Custom Tags Section (if any were added in this session) */}
+                {sessionCustomTags.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <h4 style={{ margin: 0, color: '#94a3b8', fontSize: '13px', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 'bold' }}>Session Custom Tags</h4>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                      {sessionCustomTags.map(tag => {
+                        const isActive = viewerTags.includes(tag);
+                        return (
+                          <button 
+                            key={tag}
+                            onClick={() => handleToggleTag(tag)}
+                            disabled={isProcessing}
+                            style={{ 
+                              padding: '8px 16px', 
+                              borderRadius: '32px', 
+                              backgroundColor: isActive ? '#3b82f6' : 'transparent', 
+                              color: isActive ? 'white' : '#cbd5e1', 
+                              border: isActive ? '1px solid #3b82f6' : '1px solid rgba(255,255,255,0.2)', 
+                              fontWeight: '600', 
+                              fontSize: '14px',
+                              opacity: isProcessing ? 0.7 : 1,
+                              transition: 'all 0.2s'
+                            }}
+                          >
+                             {tag}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
                 )}
                 
                 {Object.entries(globalTags || {}).map(([category, tags]) => (
