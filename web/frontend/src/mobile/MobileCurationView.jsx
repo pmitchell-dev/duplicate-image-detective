@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useDrag } from '@use-gesture/react';
-import { ChevronLeft, RotateCw } from 'lucide-react';
+import { ChevronLeft, RotateCw, Tag as TagIcon, X } from 'lucide-react';
 import axios from 'axios';
 
 const API_BASE = '/api';
@@ -18,10 +18,11 @@ export default function MobileCurationView({
   const [direction, setDirection] = useState(0);
   const [isProcessing, setIsProcessing] = useState(false);
   const [viewerTags, setViewerTags] = useState([]);
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
   const currentAsset = results[index];
 
-  // Flatten global tags into a unique list for the quick-action pills
+  // Flatten global tags into a unique list for the drawer
   const allAvailableTags = useMemo(() => {
     if (!globalTags) return [];
     const tags = Object.values(globalTags).flat();
@@ -60,7 +61,9 @@ export default function MobileCurationView({
   };
 
   const bind = useDrag(({ active, movement: [mx], direction: [xDir], cancel, velocity: [vx] }) => {
-    // If the user drags far enough or fast enough, paginate
+    // Prevent swiping the image if the tag drawer is open
+    if (isDrawerOpen) return;
+    
     if (!active && (Math.abs(mx) > window.innerWidth / 3 || vx > 0.5)) {
       if (xDir > 0) {
         paginate(-1); // Swipe right -> Previous image
@@ -118,30 +121,15 @@ export default function MobileCurationView({
   };
 
   const variants = {
-    enter: (direction) => ({
-      x: direction > 0 ? 1000 : -1000,
-      opacity: 0
-    }),
-    center: {
-      zIndex: 1,
-      x: 0,
-      opacity: 1
-    },
-    exit: (direction) => ({
-      zIndex: 0,
-      x: direction < 0 ? 1000 : -1000,
-      opacity: 0
-    })
+    enter: (direction) => ({ x: direction > 0 ? 1000 : -1000, opacity: 0 }),
+    center: { zIndex: 1, x: 0, opacity: 1 },
+    exit: (direction) => ({ zIndex: 0, x: direction < 0 ? 1000 : -1000, opacity: 0 })
   };
 
   if (!currentAsset) return null;
 
   return (
     <div style={{ position: 'fixed', inset: 0, backgroundColor: 'black', zIndex: 100, display: 'flex', flexDirection: 'column' }}>
-      <style>{`
-        .hide-scrollbar::-webkit-scrollbar { display: none; }
-        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-      `}</style>
       
       {/* Top Bar */}
       <div style={{ position: 'absolute', top: 0, left: 0, right: 0, padding: '16px', zIndex: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -182,80 +170,153 @@ export default function MobileCurationView({
             draggable={false}
           />
         </AnimatePresence>
+
+        {/* Floating Applied Tags Overlay */}
+        <div style={{ 
+          position: 'absolute', 
+          bottom: '24px', 
+          left: '16px', 
+          right: '16px',
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: '8px',
+          zIndex: 5,
+          pointerEvents: 'none' // Let swipes pass through to the image
+        }}>
+          {viewerTags.map(tag => (
+            <motion.div 
+              key={tag}
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              style={{ 
+                padding: '6px 14px', 
+                backgroundColor: 'rgba(0,0,0,0.65)', 
+                backdropFilter: 'blur(4px)',
+                color: 'white', 
+                borderRadius: '16px', 
+                fontSize: '13px', 
+                fontWeight: '600',
+                border: '1px solid rgba(255,255,255,0.2)',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
+              }}
+            >
+              {tag}
+            </motion.div>
+          ))}
+        </div>
       </div>
 
-      {/* Bottom Action Bar (Material Design 3 Solid) */}
+      {/* Minimalist Bottom Action Bar */}
       <div style={{ 
         backgroundColor: '#1e293b', 
-        padding: '24px 16px 36px 16px', 
+        padding: '20px 16px 36px 16px', 
         borderTopLeftRadius: '24px', 
         borderTopRightRadius: '24px',
         display: 'flex',
-        flexDirection: 'column',
-        gap: '16px',
+        justifyContent: 'center',
+        gap: '48px',
         zIndex: 10,
         boxShadow: '0 -4px 20px rgba(0,0,0,0.3)'
       }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-           
-           <button 
-             onClick={handleRotate}
-             disabled={isProcessing}
-             style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: 'none', border: 'none', color: '#cbd5e1', opacity: isProcessing ? 0.5 : 1 }}
-           >
-             <div style={{ width: '56px', height: '56px', borderRadius: '50%', backgroundColor: 'rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '8px' }}>
-               <RotateCw size={24} />
-             </div>
-             <span style={{ fontSize: '13px', fontWeight: '500' }}>Rotate</span>
-           </button>
-           
-           {/* Tags Container Wrapper with Edge Fade */}
-           <div style={{ 
-             flex: 1, 
-             overflow: 'hidden', 
-             WebkitMaskImage: 'linear-gradient(to right, transparent, black 16px, black calc(100% - 16px), transparent)',
-             maskImage: 'linear-gradient(to right, transparent, black 16px, black calc(100% - 16px), transparent)',
-             display: 'flex',
-             alignItems: 'center'
-           }}>
-             {/* Scrollable Container */}
-             <div className="hide-scrollbar" style={{ display: 'flex', gap: '8px', overflowX: 'auto', padding: '12px 24px', width: '100%', alignItems: 'center' }}>
-               {allAvailableTags.length === 0 && (
-                 <span style={{ color: '#94a3b8', padding: '14px', fontStyle: 'italic', margin: '0 auto' }}>No global tags configured.</span>
-               )}
-               
-               {allAvailableTags.map(tag => {
-                 const isActive = viewerTags.includes(tag);
-                 return (
-                   <button 
-                     key={tag}
-                     onClick={() => handleToggleTag(tag)}
-                     disabled={isProcessing}
-                     style={{ 
-                       padding: '10px 18px', 
-                       borderRadius: '32px', 
-                       backgroundColor: isActive ? '#3b82f6' : 'transparent', 
-                       color: isActive ? 'white' : 'rgba(255,255,255,0.9)', 
-                       border: isActive ? '1px solid #3b82f6' : '1px solid rgba(255,255,255,0.4)', 
-                       fontWeight: '600', 
-                       fontSize: '14px',
-                       whiteSpace: 'nowrap',
-                       opacity: isProcessing ? 0.7 : 1,
-                       transition: 'all 0.2s',
-                       flexShrink: 0
-                     }}
-                   >
-                      {tag}
-                   </button>
-                 );
-               })}
-             </div>
+         <button 
+           onClick={handleRotate}
+           disabled={isProcessing}
+           style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: 'none', border: 'none', color: '#cbd5e1', opacity: isProcessing ? 0.5 : 1 }}
+         >
+           <div style={{ width: '64px', height: '64px', borderRadius: '50%', backgroundColor: 'rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '8px' }}>
+             <RotateCw size={28} />
            </div>
+           <span style={{ fontSize: '14px', fontWeight: '500' }}>Rotate</span>
+         </button>
 
-           {/* Transparent spacer to balance the flexbox since we removed the Trash button */}
-           <div style={{ width: '56px' }}></div>
-        </div>
+         <button 
+           onClick={() => setIsDrawerOpen(true)}
+           style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: 'none', border: 'none', color: '#60a5fa' }}
+         >
+           <div style={{ width: '64px', height: '64px', borderRadius: '50%', backgroundColor: 'rgba(59, 130, 246, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '8px' }}>
+             <TagIcon size={28} />
+           </div>
+           <span style={{ fontSize: '14px', fontWeight: '500' }}>Tags</span>
+         </button>
       </div>
+
+      {/* Tag Drawer (Bottom Sheet Modal) */}
+      <AnimatePresence>
+        {isDrawerOpen && (
+          <>
+            {/* Backdrop */}
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsDrawerOpen(false)}
+              style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 101, touchAction: 'none' }}
+            />
+            {/* Drawer */}
+            <motion.div 
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+              style={{ 
+                position: 'fixed', 
+                bottom: 0, 
+                left: 0, 
+                right: 0, 
+                backgroundColor: '#1e293b', 
+                borderTopLeftRadius: '24px', 
+                borderTopRightRadius: '24px',
+                padding: '24px 16px 48px 16px',
+                zIndex: 102,
+                maxHeight: '80vh',
+                display: 'flex',
+                flexDirection: 'column',
+                boxShadow: '0 -10px 40px rgba(0,0,0,0.5)'
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                <h3 style={{ margin: 0, color: 'white', fontSize: '20px' }}>Manage Tags</h3>
+                <button 
+                  onClick={() => setIsDrawerOpen(false)}
+                  style={{ background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#cbd5e1' }}
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div style={{ overflowY: 'auto', display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
+                {allAvailableTags.length === 0 && (
+                  <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>No global tags configured.</span>
+                )}
+                
+                {allAvailableTags.map(tag => {
+                  const isActive = viewerTags.includes(tag);
+                  return (
+                    <button 
+                      key={tag}
+                      onClick={() => handleToggleTag(tag)}
+                      disabled={isProcessing}
+                      style={{ 
+                        padding: '10px 18px', 
+                        borderRadius: '32px', 
+                        backgroundColor: isActive ? '#3b82f6' : 'transparent', 
+                        color: isActive ? 'white' : '#cbd5e1', 
+                        border: isActive ? '1px solid #3b82f6' : '1px solid rgba(255,255,255,0.2)', 
+                        fontWeight: '600', 
+                        fontSize: '15px',
+                        opacity: isProcessing ? 0.7 : 1,
+                        transition: 'all 0.2s'
+                      }}
+                    >
+                       {tag}
+                    </button>
+                  );
+                })}
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
 
     </div>
   );
