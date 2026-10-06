@@ -2,10 +2,13 @@ import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { Search, Server, Key, AlertCircle, Trash2, RotateCw, Tag, CheckSquare, Square, Users, User, Folder, Scissors, ChevronLeft, ChevronRight, X, Crop } from 'lucide-react';
 import logo from './assets/logo.png';
+import { useIsTouchDevice } from './hooks/useIsTouchDevice';
+import MobileApp from './mobile/MobileApp';
 
 const API_BASE = '/api';
 
 function App() {
+  const isTouchDevice = useIsTouchDevice();
   const [serverUrl, setServerUrl] = useState(() => localStorage.getItem('pic_serverUrl') || '');
   const [apiKey, setApiKey] = useState(() => localStorage.getItem('pic_apiKey') || '');
   const [mode, setMode] = useState('smart'); // 'smart', 'people', 'folder'
@@ -494,6 +497,25 @@ function App() {
       setIsProcessing(false);
     }
   };
+
+  if (isTouchDevice) {
+    return (
+      <MobileApp 
+        serverUrl={serverUrl}
+        apiKey={apiKey}
+        globalTags={globalTags}
+        folders={folders}
+        selectedFolder={selectedFolder}
+        setSelectedFolder={setSelectedFolder}
+        loadFolderImages={loadFolderImages}
+        results={results}
+        setResults={setResults}
+        error={error}
+        loading={loading}
+        getAssetImgSrc={getAssetImgSrc}
+      />
+    );
+  }
 
   return (
     <div className="app-container">
