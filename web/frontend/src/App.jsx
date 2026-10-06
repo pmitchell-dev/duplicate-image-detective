@@ -519,8 +519,9 @@ function App() {
 
   if (isTouchDevice) {
     return (
-      <MobileApp 
-        serverUrl={serverUrl}
+      <>
+        <MobileApp 
+          serverUrl={serverUrl}
         apiKey={apiKey}
         globalTags={globalTags}
         folders={folders}
