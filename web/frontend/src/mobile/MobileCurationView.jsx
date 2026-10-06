@@ -122,13 +122,21 @@ export default function MobileCurationView({
     }
   };
 
-  const handleAddCustomTag = () => {
+  const handleAddCustomTag = async () => {
     const trimmed = newTagInput.trim();
     if (!trimmed) return;
     
+    const tagExistsGlobally = allAvailableTags.includes(trimmed);
+    
     // Add to session custom tags if not present in any list
-    if (!allAvailableTags.includes(trimmed) && !sessionCustomTags.includes(trimmed)) {
+    if (!tagExistsGlobally && !sessionCustomTags.includes(trimmed)) {
       setSessionCustomTags([...sessionCustomTags, trimmed]);
+      
+      // Also register it globally on the backend so the PC sees it
+      await axios.post(`${API_BASE}/tag-list`, {
+        category: 'Uncategorized',
+        tag: trimmed
+      }).catch(console.error);
     }
     
     // Apply tag
