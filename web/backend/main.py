@@ -296,7 +296,8 @@ def get_local_image(path: str, size: str = "large", t: str = None):
                 if size == "preview":
                     img.thumbnail((800, 800))
                 else:
-                    img.thumbnail((3000, 3000))
+                    # Capped at 1080p HD to save bandwidth and RAM on cheap phones
+                    img.thumbnail((1920, 1920))
                     
                 img.save(cached_path, format='JPEG', quality=85)
                 return FileResponse(cached_path)

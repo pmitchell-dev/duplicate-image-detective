@@ -39,14 +39,12 @@ export default function MobileCurationView({
     }
   }, [currentAsset]);
 
-  // Eager preloading for the next 3 images to ensure smooth swiping
+  // Eager preloading for just the next 1 image to save RAM and DSL bandwidth
   useEffect(() => {
     const preloadImages = () => {
-      for (let i = 1; i <= 3; i++) {
-        if (index + i < results.length) {
-          const img = new Image();
-          img.src = getAssetImgSrc(results[index + i], true);
-        }
+      if (index + 1 < results.length) {
+        const img = new Image();
+        img.src = getAssetImgSrc(results[index + 1], true);
       }
     };
     preloadImages();
