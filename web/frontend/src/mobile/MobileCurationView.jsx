@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useDrag } from '@use-gesture/react';
-import { ChevronLeft, RotateCw, Tag as TagIcon, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, RotateCw, Tag as TagIcon, X } from 'lucide-react';
 import axios from 'axios';
 
 const API_BASE = '/api';
@@ -143,7 +143,25 @@ export default function MobileCurationView({
       </div>
 
       {/* Swipeable Image Area */}
-      <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }} {...bind()}>
+      <div style={{ flex: 1, position: 'relative', overflow: 'hidden', touchAction: 'pan-y' }} {...bind()}>
+        {/* Floating Navigation Arrows */}
+        {index > 0 && (
+          <button 
+            onClick={(e) => { e.stopPropagation(); paginate(-1); }}
+            style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', zIndex: 10, background: 'rgba(15, 23, 42, 0.5)', backdropFilter: 'blur(4px)', border: 'none', borderRadius: '50%', width: '44px', height: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}
+          >
+            <ChevronLeft size={28} />
+          </button>
+        )}
+        {index < results.length - 1 && (
+          <button 
+            onClick={(e) => { e.stopPropagation(); paginate(1); }}
+            style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', zIndex: 10, background: 'rgba(15, 23, 42, 0.5)', backdropFilter: 'blur(4px)', border: 'none', borderRadius: '50%', width: '44px', height: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}
+          >
+            <ChevronRight size={28} />
+          </button>
+        )}
+
         <AnimatePresence initial={false} custom={direction}>
           <motion.img
             key={index}
