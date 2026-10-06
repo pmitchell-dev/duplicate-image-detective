@@ -280,8 +280,10 @@ def get_local_image(path: str, size: str = "large", t: str = None):
         CACHE_DIR = "/mnt/backups/piccurator/cache"
         os.makedirs(CACHE_DIR, exist_ok=True)
         
-        # Cache key based on path, size, and rotation timestamp (t)
-        cache_key = hashlib.md5(f"{path}_{size}_{t}".encode()).hexdigest()
+        # Base the cache key on the file's ACTUAL modification time (mtime)
+        # If the file is rotated on disk, its mtime changes, automatically busting the cache.
+        mtime = str(os.path.getmtime(path))
+        cache_key = hashlib.md5(f"{path}_{size}_{mtime}".encode()).hexdigest()
         cached_path = os.path.join(CACHE_DIR, f"{cache_key}.jpg")
         
         if os.path.exists(cached_path):
