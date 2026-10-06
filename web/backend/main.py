@@ -403,11 +403,21 @@ def merge_tags(req: TagMergeAction):
     # Update global tags first
     tags_data = get_global_tags()
     global_modified = False
+    
+    # Check if good_tag already exists in ANY category
+    # Strip whitespace to ensure we match even if the JSON has padded strings
+    good_tag_exists_anywhere = False
+    for cat, t_list in tags_data.items():
+        if any(t.strip() == good_tag for t in t_list):
+            good_tag_exists_anywhere = True
+            break
+            
     for cat, t_list in tags_data.items():
         if bad_tag in t_list:
             t_list.remove(bad_tag)
-            if good_tag not in t_list:
+            if not good_tag_exists_anywhere:
                 t_list.append(good_tag)
+                good_tag_exists_anywhere = True
             global_modified = True
             
     if global_modified:
