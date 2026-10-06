@@ -20,7 +20,7 @@ function CacheCounter() {
   const mb = (size / (1024 * 1024)).toFixed(2);
   if (size === 0) return null; // Don't show if empty or error
   return (
-    <div style={{ position: 'fixed', top: 12, right: 12, background: 'rgba(0,0,0,0.8)', color: '#10b981', padding: '6px 10px', borderRadius: '8px', zIndex: 9999, fontSize: '13px', fontWeight: 'bold', border: '1px solid rgba(16,185,129,0.3)' }}>
+    <div style={{ position: 'fixed', top: 12, left: 12, background: 'rgba(0,0,0,0.8)', color: '#10b981', padding: '6px 10px', borderRadius: '8px', zIndex: 9999, fontSize: '13px', fontWeight: 'bold', border: '1px solid rgba(16,185,129,0.3)' }}>
       Cache: {mb} MB
     </div>
   );
