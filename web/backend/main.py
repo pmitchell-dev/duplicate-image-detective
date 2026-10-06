@@ -389,6 +389,46 @@ def save_full_tag_list(req: dict):
     save_global_tags(req)
     return {"status": "success", "tags": req}
 
+class TagMergeAction(BaseModel):
+    bad_tag: str
+    good_tag: str
+
+@app.post("/api/tags/merge")
+def merge_tags(req: TagMergeAction):
+    bad_tag = req.bad_tag.strip()
+    good_tag = req.good_tag.strip()
+    if not bad_tag or not good_tag:
+        raise HTTPException(status_code=400, detail="Both bad_tag and good_tag are required")
+        
+    # Update global tags first
+    tags_data = get_global_tags()
+    global_modified = False
+    for cat, t_list in tags_data.items():
+        if bad_tag in t_list:
+            t_list.remove(bad_tag)
+            if good_tag not in t_list:
+                t_list.append(good_tag)
+            global_modified = True
+            
+    if global_modified:
+        save_global_tags(tags_data)
+
+    # Scan and update files
+    count = 0
+    base_dir = "/mnt/backups/family_photos"
+    if os.path.exists(base_dir):
+        image_paths = scanner.collect_image_paths(base_dir)
+        for p in image_paths:
+            tags = scanner.read_image_tags(p)
+            if bad_tag in tags:
+                tags.remove(bad_tag)
+                if good_tag not in tags:
+                    tags.append(good_tag)
+                if scanner.write_image_tags(p, tags):
+                    count += 1
+                    
+    return {"status": "success", "modified_count": count, "tags": tags_data}
+
 @app.post("/api/tags")
 def manage_tags(req: TagAction):
     count = 0
@@ -399,16 +439,15 @@ def manage_tags(req: TagAction):
     for p in req.paths:
         path_obj = Path(p)
         tags = scanner.read_image_tags(path_obj)
-        existing_lower = {t.lower() for t in tags}
         modified = False
 
         if req.action == "add":
-            if cleaned.lower() not in existing_lower:
+            if cleaned not in tags:
                 tags.append(cleaned)
                 modified = True
         elif req.action == "remove":
-            if cleaned.lower() in existing_lower:
-                tags = [t for t in tags if t.lower() != cleaned.lower()]
+            if cleaned in tags:
+                tags.remove(cleaned)
                 modified = True
 
         if modified:

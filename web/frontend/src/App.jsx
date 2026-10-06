@@ -65,6 +65,8 @@ function App() {
   const [showTagsModal, setShowTagsModal] = useState(false);
   const [newCategoryInput, setNewCategoryInput] = useState('');
   const [newTagInputs, setNewTagInputs] = useState({});
+  const [mergeBadTag, setMergeBadTag] = useState('');
+  const [mergeGoodTag, setMergeGoodTag] = useState('');
 
   const handleTabAutocomplete = (e, value, setter) => {
     if (e.key === 'Tab' && value) {
@@ -121,6 +123,33 @@ function App() {
     }
     setGlobalTags(newTags);
     await axios.post(`${API_BASE}/tag-list/full`, newTags).catch(console.error);
+  };
+
+  const handleMergeTags = async () => {
+    const bad = mergeBadTag.trim();
+    const good = mergeGoodTag.trim();
+    if (!bad || !good) return;
+    if (bad === good) {
+      alert("Bad and good tags cannot be the same.");
+      return;
+    }
+    if (!window.confirm(`Are you sure you want to merge '${bad}' into '${good}'? This will update all images and the global tag list.`)) return;
+    
+    setIsProcessing(true);
+    try {
+      const res = await axios.post(`${API_BASE}/tags/merge`, {
+        bad_tag: bad,
+        good_tag: good
+      });
+      alert(`Merged successfully! ${res.data.modified_count} images were updated.`);
+      setGlobalTags(res.data.tags || {});
+      setMergeBadTag('');
+      setMergeGoodTag('');
+    } catch (err) {
+      alert(`Merge failed: ${err.response?.data?.detail || err.message}`);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   useEffect(() => {
@@ -349,12 +378,12 @@ function App() {
         action: 'add'
       });
       
-      if (!viewerTags.some(t => t.toLowerCase() === cleanedTag.toLowerCase())) {
+      if (!viewerTags.includes(cleanedTag)) {
         setViewerTags([...viewerTags, cleanedTag]);
       }
       
       // Automatically register to global list if it doesn't exist anywhere
-      const tagExistsGlobally = Object.values(globalTags).flat().some(t => t.toLowerCase() === cleanedTag.toLowerCase());
+      const tagExistsGlobally = Object.values(globalTags).flat().includes(cleanedTag);
       if (!tagExistsGlobally) {
         await axios.post(`${API_BASE}/tag-list`, {
           category: 'Uncategorized',
@@ -486,7 +515,7 @@ function App() {
         
         if (actionType === 'addTag') {
           // Automatically register to global tag list if it doesn't exist anywhere
-          const tagExistsGlobally = Object.values(globalTags).flat().some(t => t.toLowerCase() === cleanedTag.toLowerCase());
+          const tagExistsGlobally = Object.values(globalTags).flat().includes(cleanedTag);
           if (!tagExistsGlobally) {
             await axios.post(`${API_BASE}/tag-list`, {
               category: 'Uncategorized',
@@ -975,6 +1004,39 @@ function App() {
                 </div>
               </div>
             ))}
+            
+            <div style={{ marginTop: '2rem', borderTop: '1px solid #334155', paddingTop: '2rem' }}>
+              <h3 style={{ margin: '0 0 1rem 0', color: '#f59e0b' }}>Merge Tags</h3>
+              <p style={{ fontSize: '0.9rem', color: '#94a3b8', marginBottom: '1rem' }}>
+                Select a bad tag to completely remove it and replace it with a good tag across all files.
+              </p>
+              <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                <input 
+                  type="text" 
+                  placeholder="Bad Tag (to remove)" 
+                  value={mergeBadTag}
+                  onChange={e => setMergeBadTag(e.target.value)}
+                  list="globalTagsList"
+                  style={{ padding: '0.5rem', flex: 1 }}
+                />
+                <span style={{ color: '#94a3b8' }}>➔</span>
+                <input 
+                  type="text" 
+                  placeholder="Good Tag (to keep)" 
+                  value={mergeGoodTag}
+                  onChange={e => setMergeGoodTag(e.target.value)}
+                  list="globalTagsList"
+                  style={{ padding: '0.5rem', flex: 1 }}
+                />
+                <button 
+                  className="btn-action btn-danger" 
+                  onClick={handleMergeTags} 
+                  disabled={isProcessing || !mergeBadTag || !mergeGoodTag}
+                >
+                  Merge
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
