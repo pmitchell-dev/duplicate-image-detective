@@ -44,10 +44,14 @@ export default function MobileApp({
       selectedFolder={selectedFolder}
       setSelectedFolder={setSelectedFolder}
       loadFolderImages={loadFolderImages}
-      onAssetClick={(index) => setViewingIndex(index)}
+      onImageClick={(index) => setViewingIndex(index)}
       getAssetImgSrc={getAssetImgSrc}
       loading={loading}
       error={error}
+      query={query}
+      setQuery={setQuery}
+      handleSmartSearch={handleSmartSearch}
+      logo={logo}
     />
   );
 }
