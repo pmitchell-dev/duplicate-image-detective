@@ -856,11 +856,13 @@ class PicCuratorStudioApp(tk.Tk):
         self._stats = ScanStats()
         self._match_counts: dict[Path, int] = {}
         self._scanner: DuplicateScanner | None = None
-        self._pending_pairs: list[tuple[Path, Path]] = []
-        self._current_pair: tuple[Path, Path] | None = None
+        self._pending_groups: list[list[Path]] = []
+        self._current_group: list[Path] | None = None
         self._scan_running = False
         self._scan_done = False
-        self._pair_index = 0  # displayed pair counter
+        self._group_index = 0  # displayed group counter
+        self._dup_panels: list[ImagePanel] = []
+        self._dup_vars: list[tk.StringVar] = []
 
         # Image viewer internal state
         self._fv_root_dir: Path | None = None
@@ -910,6 +912,7 @@ class PicCuratorStudioApp(tk.Tk):
         self.var_immich_albums_count = tk.StringVar(value="Total found: 0 album(s)")
         self.var_immich_people_count = tk.StringVar(value="Total found: 0 person(s)")
         self.var_immich_person_assets_count = tk.StringVar(value="Total found: 0 asset(s)")
+        self.var_immich_detection_distance = tk.DoubleVar(value=0.05)
 
         # Load persisted Immich config if present (immich_config.json)
         self._load_immich_config()
@@ -920,6 +923,7 @@ class PicCuratorStudioApp(tk.Tk):
         self.var_immich_key.trace_add("write", lambda *args: self._save_immich_config())
         self.var_immich_local_path.trace_add("write", lambda *args: self._save_immich_config())
         self.var_immich_server_prefix.trace_add("write", lambda *args: self._save_immich_config())
+        self.var_immich_detection_distance.trace_add("write", lambda *args: self._save_immich_config())
 
         self._build_ui()
         self._set_review_state(active=False)
@@ -1032,6 +1036,12 @@ class PicCuratorStudioApp(tk.Tk):
                             self.var_immich_local_path.set(loc_p)
                         if srv_p:
                             self.var_immich_server_prefix.set(srv_p)
+                        dist = data.get("detection_distance")
+                        if dist is not None:
+                            try:
+                                self.var_immich_detection_distance.set(float(dist))
+                            except ValueError:
+                                pass
                         saved_tags = data.get("saved_tags")
                         if isinstance(saved_tags, list):
                             for tag in saved_tags:
@@ -1048,6 +1058,7 @@ class PicCuratorStudioApp(tk.Tk):
                 "api_key": self.var_immich_key.get().strip(),
                 "local_path": self.var_immich_local_path.get().strip(),
                 "server_prefix": self.var_immich_server_prefix.get().strip(),
+                "detection_distance": self.var_immich_detection_distance.get(),
                 "saved_tags": sorted(list(self._known_keywords)),
             }
             with open(cfg_file, "w", encoding="utf-8") as f:
@@ -1071,9 +1082,39 @@ class PicCuratorStudioApp(tk.Tk):
 
     # ── UI construction ────────────────────────────────────────────────────
     def _build_ui(self):
+        self._build_menu()
         self._build_topbar()
         self._build_main_area()
         self._build_statusbar()
+
+    def _build_menu(self):
+        menubar = tk.Menu(self)
+        file_menu = tk.Menu(menubar, tearoff=0)
+        file_menu.add_command(label="Settings...", command=self._open_settings_popup)
+        file_menu.add_separator()
+        file_menu.add_command(label="Exit", command=self.destroy)
+        menubar.add_cascade(label="File", menu=file_menu)
+        self.config(menu=menubar)
+
+    def _open_settings_popup(self):
+        popup = tk.Toplevel(self)
+        popup.title("Settings")
+        popup.geometry("350x180")
+        popup.configure(bg=BG_DARK)
+        popup.transient(self)
+        popup.grab_set()
+
+        frame = tk.Frame(popup, bg=BG_PANEL, padx=20, pady=20)
+        frame.pack(fill="both", expand=True)
+
+        tk.Label(frame, text="Immich Detection Distance:", font=(FONT_FAMILY, 10, "bold"), bg=BG_PANEL, fg=TEXT_MAIN).pack(anchor="w")
+        tk.Label(frame, text="Higher values detect more duplicates (0.001 - 0.1).", font=(FONT_FAMILY, 8), bg=BG_PANEL, fg=TEXT_DIM).pack(anchor="w", pady=(0, 10))
+
+        entry = tk.Entry(frame, textvariable=self.var_immich_detection_distance, font=(FONT_FAMILY, 10), bg=BG_CARD, fg=TEXT_MAIN, insertbackground=TEXT_MAIN, relief="flat")
+        entry.pack(fill="x", ipady=3)
+
+        btn_close = tk.Button(frame, text="Close", font=(FONT_FAMILY, 9, "bold"), bg=ACCENT_BLUE, fg=BG_DARK, relief="flat", cursor="hand2", command=popup.destroy)
+        btn_close.pack(pady=(15, 0))
 
     def _build_topbar(self):
         bar = tk.Frame(self, bg=BG_PANEL, pady=10)
@@ -1339,18 +1380,34 @@ class PicCuratorStudioApp(tk.Tk):
 
         # ── 1. Duplicate Scanner Area ─────────────────────
         self._frame_dup_area = tk.Frame(self._main_container, bg=BG_DARK)
-        self._frame_dup_area.columnconfigure(0, weight=3)
-        self._frame_dup_area.columnconfigure(1, weight=2)
-        self._frame_dup_area.columnconfigure(2, weight=3)
-        self._frame_dup_area.rowconfigure(0, weight=1)
-
-        self.panel_left  = ImagePanel(self._frame_dup_area, "◀  Image 1", rotate_hotkey="Q")
-        self.panel_left.grid(row=0, column=0, sticky="nsew", padx=(0, 6))
-
-        self._build_action_panel(self._frame_dup_area)
-
-        self.panel_right = ImagePanel(self._frame_dup_area, "Image 2  ▶", rotate_hotkey="E")
-        self.panel_right.grid(row=0, column=2, sticky="nsew", padx=(6, 0))
+        
+        dup_action_bar = tk.Frame(self._frame_dup_area, bg=BG_PANEL, pady=10)
+        dup_action_bar.pack(fill="x", side="top")
+        
+        self.lbl_group_counter = tk.Label(dup_action_bar, text="", font=(FONT_FAMILY, 10, "bold"), bg=BG_PANEL, fg=TEXT_DIM)
+        self.lbl_group_counter.pack(side="left", padx=15)
+        
+        self._btn_keep_all = self._make_button(dup_action_bar, "✅ Keep All (W)", self._act_keep_all, fg="#ffffff", bg=COLOR_BOTH_KEEP)
+        self._btn_keep_all.pack(side="left", padx=5)
+        
+        self._btn_trash_all = self._make_button(dup_action_bar, "🗑 Trash All (S)", self._act_trash_all, fg="#ffffff", bg=COLOR_BOTH_TRASH)
+        self._btn_trash_all.pack(side="left", padx=5)
+        
+        self._btn_next_group = self._make_button(dup_action_bar, "Confirm & Next Group ➔ (Enter)", self._act_next_group, fg="#ffffff", bg=ACCENT_BLUE)
+        self._btn_next_group.pack(side="right", padx=15)
+        
+        self.dup_canvas = tk.Canvas(self._frame_dup_area, bg=BG_DARK, highlightthickness=0)
+        self.dup_scrollbar = ttk.Scrollbar(self._frame_dup_area, orient="horizontal", command=self.dup_canvas.xview)
+        self.dup_container = tk.Frame(self.dup_canvas, bg=BG_DARK)
+        
+        self.dup_canvas_window = self.dup_canvas.create_window((0, 0), window=self.dup_container, anchor="nw")
+        self.dup_canvas.configure(xscrollcommand=self.dup_scrollbar.set)
+        
+        self.dup_container.bind("<Configure>", lambda e: self.dup_canvas.configure(scrollregion=self.dup_canvas.bbox("all")))
+        self.dup_canvas.bind("<Configure>", lambda e: self.dup_canvas.itemconfig(self.dup_canvas_window, height=e.height))
+        
+        self.dup_scrollbar.pack(side="bottom", fill="x")
+        self.dup_canvas.pack(side="top", fill="both", expand=True)
 
         self._frame_dup_area.pack(fill="both", expand=True, padx=20, pady=15)
 
@@ -1366,103 +1423,6 @@ class PicCuratorStudioApp(tk.Tk):
         self._frame_immich_area = tk.Frame(self._main_container, bg=BG_DARK)
         self._build_immich_area(self._frame_immich_area)
 
-    def _build_action_panel(self, parent):
-        frame = tk.Frame(parent, bg=BG_PANEL, padx=16, pady=20)
-        frame.grid(row=0, column=1, sticky="nsew")
-
-        tk.Label(
-            frame,
-            text="Actions",
-            font=(FONT_FAMILY, 13, "bold"),
-            bg=BG_PANEL,
-            fg=ACCENT_GREEN,
-        ).pack(pady=(8, 4))
-
-        # Pair counter
-        self.lbl_pair_counter = tk.Label(
-            frame,
-            text="",
-            font=(FONT_FAMILY, 9),
-            bg=BG_PANEL,
-            fg=TEXT_DIM,
-        )
-        self.lbl_pair_counter.pack(pady=(0, 10))
-
-        self._action_buttons: list[tk.Button] = []
-
-        # ── Keep Both — full-width green ─────────────────────
-        btn_kb = self._make_button(
-            frame, "✅  Keep Both (W)", self._act_keep_both,
-            fg="#ffffff", bg=COLOR_BOTH_KEEP,
-        )
-        btn_kb.pack(fill="x", padx=12, pady=(0, 8))
-        self._action_buttons.append(btn_kb)
-
-        # ── Keep Left (A) — full-width green ─────────────────
-        btn_kl = self._make_button(
-            frame, "✅  Keep (A)\n◄ Image 1", self._act_keep_left,
-            fg="#ffffff", bg=COLOR_KEEP,
-        )
-        btn_kl.pack(fill="x", padx=12, pady=8)
-        self._action_buttons.append(btn_kl)
-
-        # ── Keep Right (D) — full-width green ────────────────
-        btn_kr = self._make_button(
-            frame, "✅  Keep (D)\nImage 2 ►", self._act_keep_right,
-            fg="#ffffff", bg=COLOR_KEEP,
-        )
-        btn_kr.pack(fill="x", padx=12, pady=8)
-        self._action_buttons.append(btn_kr)
-
-        # ── Trash Both — full-width amber ──────────────────
-        btn_tb = self._make_button(
-            frame, "🗑  Trash Both (S)", self._act_trash_both,
-            fg="#ffffff", bg=COLOR_BOTH_TRASH,
-        )
-        btn_tb.pack(fill="x", padx=12, pady=(8, 0))
-        self._action_buttons.append(btn_tb)
-
-        # ── Separator ────────────────────────────────────
-        tk.Frame(frame, bg=TEXT_DIM, height=1).pack(fill="x", pady=20)
-
-        tk.Label(
-            frame,
-            text="☠  Permanent Delete (no Recycle Bin)",
-            font=(FONT_FAMILY, 8),
-            bg=BG_PANEL,
-            fg=TEXT_DIM,
-        ).pack()
-
-        # ── Permanent delete — side-by-side ─────────────────
-        del_row = tk.Frame(frame, bg=BG_PANEL)
-        del_row.pack(fill="x", pady=(4, 0))
-
-        btn_dl = self._make_button(
-            del_row, "☠  Delete\n◄ Image 1", self._act_del_left,
-            fg="#ffffff", bg=COLOR_PERM_DEL,
-        )
-        btn_dl.pack(side="left", fill="both", expand=True, padx=(12, 4))
-        self._action_buttons.append(btn_dl)
-
-        btn_dr = self._make_button(
-            del_row, "☠  Delete\nImage 2 ►", self._act_del_right,
-            fg="#ffffff", bg=COLOR_PERM_DEL,
-        )
-        btn_dr.pack(side="right", fill="both", expand=True, padx=(4, 12))
-        self._action_buttons.append(btn_dr)
-
-        # ── Similarity badge ─────────────────────────────────
-        tk.Frame(frame, bg=TEXT_DIM, height=1).pack(fill="x", pady=20)
-        self.lbl_similarity = tk.Label(
-            frame,
-            text="",
-            font=(FONT_FAMILY, 10, "bold"),
-            bg=BG_PANEL,
-            fg=ACCENT_AMBER,
-            wraplength=200,
-            justify="center",
-        )
-        self.lbl_similarity.pack()
 
     def _build_folder_viewer_area(self, parent: tk.Frame):
         # Top bar inside Image Viewer area
@@ -1817,6 +1777,7 @@ class PicCuratorStudioApp(tk.Tk):
             stats=self._stats,
             hash_threshold=HASH_THRESHOLD,
             use_ai_scan=self.var_use_ai_scan.get(),
+            ai_detection_distance=self.var_immich_detection_distance.get(),
         )
         self._scanner.start()
         self._update_status("🔍  Scanning…")
@@ -1824,7 +1785,6 @@ class PicCuratorStudioApp(tk.Tk):
 
     # ── Queue polling (called by Tk event loop) ─────────────────────────────
     def _poll_queue(self):
-        # Drain all available items
         try:
             while True:
                 item = self._scan_queue.get_nowait()
@@ -1832,118 +1792,117 @@ class PicCuratorStudioApp(tk.Tk):
                     self._scan_running = False
                     self._scan_done = True
                     self._on_scan_finished()
-                    return  # stop polling
+                    return
                 else:
-                    a, b = item
-                    self._match_counts[a] = self._match_counts.get(a, 0) + 1
-                    self._match_counts[b] = self._match_counts.get(b, 0) + 1
-                    self._pending_pairs.append(item)
-                    # Load pair immediately if none being shown
-                    if self._current_pair is None:
-                        self._load_next_pair()
+                    for p in item:
+                        self._match_counts[p] = self._match_counts.get(p, 0) + 1
+                    self._pending_groups.append(item)
+                    if self._current_group is None:
+                        self._load_next_group()
         except queue.Empty:
             pass
 
-        # Update progress
-        total, processed, pairs = self._stats.snapshot()
+        total, processed, groups_found = self._stats.snapshot()
         if total > 0:
             pct = int(processed / total * 100)
             self.progress_var.set(pct)
             self.lbl_progress.config(text=f"{processed}/{total}")
-            self._update_status(
-                f"🔍  Scanning… {processed}/{total} files  |  {pairs} duplicate pair(s) found so far"
-            )
+            self._update_status(f"🔍  Scanning… {processed}/{total} files  |  {groups_found} duplicate group(s) found so far")
 
-        # Schedule next poll
         self.after(POLL_MS, self._poll_queue)
 
     def _on_scan_finished(self):
-        total, _, pairs = self._stats.snapshot()
+        total, _, groups_found = self._stats.snapshot()
         self.progress_var.set(100)
         self.lbl_progress.config(text=f"{total}/{total}")
         self._btn_browse.config(state="normal")
         self._btn_scan.config(state="normal")
 
-        if self._current_pair is None:
-            if not self._pending_pairs:
+        if self._current_group is None:
+            if not self._pending_groups:
                 self._show_complete_state("No duplicate images found in the selected directory.")
             else:
-                self._load_next_pair()
+                self._load_next_group()
         else:
-            self._update_status(
-                f"Scan complete — {pairs} pair(s) found. Reviewing…"
-            )
+            self._update_status(f"Scan complete — {groups_found} group(s) found. Reviewing…")
 
-    # ── Pair management ─────────────────────────────────────────────────────
+    # ── Group management ─────────────────────────────────────────────────────
     def _purge_deleted(self, *paths: Path):
-        """
-        Remove any pending pairs that reference one of the given (just-deleted)
-        paths so we never try to load a file that no longer exists.
-        """
         deleted = {str(p) for p in paths}
-        self._pending_pairs = [
-            (a, b) for a, b in self._pending_pairs
-            if str(a) not in deleted and str(b) not in deleted
-        ]
+        new_pending = []
+        for group in self._pending_groups:
+            valid = [p for p in group if str(p) not in deleted]
+            if len(valid) > 1:
+                new_pending.append(valid)
+        self._pending_groups = new_pending
 
-    def _load_next_pair(self):
-        # Skip over pairs where either file has been deleted elsewhere.
-        while self._pending_pairs:
-            candidate = self._pending_pairs[0]
-            if candidate[0].exists() and candidate[1].exists():
-                break  # good pair — use it
-            # One or both files are already gone; silently discard this pair.
-            self._pending_pairs.pop(0)
+    def _load_next_group(self):
+        while self._pending_groups:
+            candidate = self._pending_groups[0]
+            valid = [p for p in candidate if p.exists()]
+            if len(valid) > 1:
+                self._pending_groups[0] = valid
+                break
+            self._pending_groups.pop(0)
 
-        if not self._pending_pairs:
+        if not self._pending_groups:
             if self._scan_done:
                 self._show_complete_state()
             else:
-                # Scan still running; wait for more results
-                self._current_pair = None
-                self.panel_left.show_placeholder("Scanning for more\nduplicates…")
-                self.panel_right.show_placeholder("Scanning for more\nduplicates…")
+                self._current_group = None
+                self._clear_dup_panels()
                 self._set_review_state(active=False)
             return
 
-        pair = self._pending_pairs.pop(0)
-        self._current_pair = pair
-        self._pair_index += 1
-        left_path, right_path = pair
+        group = self._pending_groups.pop(0)
+        self._current_group = group
+        self._group_index += 1
+        
+        self._clear_dup_panels()
+        for idx, path in enumerate(group):
+            panel_frame = tk.Frame(self.dup_container, bg=BG_DARK)
+            panel_frame.pack(side="left", fill="y", padx=5)
+            
+            pnl = ImagePanel(panel_frame, f"Image {idx+1}", rotate_hotkey="", preview_size=(400, 460))
+            pnl.pack(side="top", fill="both", expand=True)
+            pnl.load_image(path)
+            count = self._match_counts.get(path, 1)
+            pnl.lbl_match_count.config(text=f"Matched with {count} picture(s)")
+            
+            var = tk.StringVar(value="keep")
+            self._dup_vars.append(var)
+            
+            rb_frame = tk.Frame(panel_frame, bg=BG_PANEL, pady=5)
+            rb_frame.pack(side="bottom", fill="x")
+            
+            rb_keep = tk.Radiobutton(rb_frame, text="Keep", variable=var, value="keep", bg=BG_PANEL, fg=ACCENT_GREEN, selectcolor=BG_DARK)
+            rb_keep.pack(side="left", expand=True)
+            rb_trash = tk.Radiobutton(rb_frame, text="Trash", variable=var, value="trash", bg=BG_PANEL, fg=ACCENT_RED, selectcolor=BG_DARK)
+            rb_trash.pack(side="right", expand=True)
+            
+            self._dup_panels.append(pnl)
 
-        self.panel_left.load_image(left_path)
-        self.panel_right.load_image(right_path)
-
-        # Update match counts
-        count_left = self._match_counts.get(left_path, 1)
-        count_right = self._match_counts.get(right_path, 1)
-        self.panel_left.lbl_match_count.config(text=f"Matched with {count_left} picture(s) total")
-        self.panel_right.lbl_match_count.config(text=f"Matched with {count_right} picture(s) total")
-
-        # Compute and show similarity
-        sim_text = self._similarity_label(left_path, right_path)
-        self.lbl_similarity.config(text=sim_text)
-
-        self.lbl_pair_counter.config(text=f"Pair {self._pair_index}")
+        self.lbl_group_counter.config(text=f"Group {self._group_index}")
         self._set_review_state(active=True)
+        self._update_status(f"Reviewing group {self._group_index}  |  {len(self._pending_groups)} group(s) remaining in queue")
 
-        self._update_status(
-            f"Reviewing pair {self._pair_index}  |  {len(self._pending_pairs)} pair(s) remaining in queue"
-        )
+    def _clear_dup_panels(self):
+        for widget in self.dup_container.winfo_children():
+            widget.destroy()
+        self._dup_panels.clear()
+        self._dup_vars.clear()
 
     def _show_complete_state(self, msg: str = ""):
-        self._current_pair = None
+        self._current_group = None
         self._set_review_state(active=False)
+        self._clear_dup_panels()
         if not msg:
-            msg = (
-                f"✅  All done!\n{self._pair_index} pair(s) reviewed.\n\n"
-                "No more duplicates found."
-            )
-        self.panel_left.show_placeholder(msg)
-        self.panel_right.show_placeholder(msg)
-        self.lbl_pair_counter.config(text="")
-        self.lbl_similarity.config(text="")
-        self._update_status(f"Scan complete — {self._pair_index} pair(s) reviewed.")
+            msg = f"✅  All done!\n{self._group_index} group(s) reviewed.\n\nNo more duplicates found."
+        
+        placeholder = tk.Label(self.dup_container, text=msg, font=(FONT_FAMILY, 14, "bold"), bg=BG_DARK, fg=ACCENT_GREEN, justify="center")
+        placeholder.pack(expand=True, fill="both", pady=50, padx=50)
+        self.lbl_group_counter.config(text="")
+        self._update_status(f"Scan complete — {self._group_index} group(s) reviewed.")
         self.progress_var.set(100)
 
     # ── Image Viewer Logic ────────────────────────────────────────────────
@@ -4321,74 +4280,39 @@ class PicCuratorStudioApp(tk.Tk):
             self.panel_right.rotate_image()
 
     # ── Action button callbacks ─────────────────────────────────────────────
-    def _act_keep_both(self):
-        self._advance()
+    def _act_keep_all(self):
+        for var in self._dup_vars:
+            var.set("keep")
 
-    def _act_keep_left(self):
-        if not self._current_pair:
-            self._advance()
-            return
-        right = self._current_pair[1]
-        self._set_review_state(active=False)  # block double-clicks during flash
-        self.panel_left.flash_green()
-        self.update_idletasks()               # force repaint NOW before advancing
-        send_to_trash(right)
-        self._purge_deleted(right)
-        self.after(FLASH_MS, self._advance)
+    def _act_trash_all(self):
+        for var in self._dup_vars:
+            var.set("trash")
 
-    def _act_keep_right(self):
-        if not self._current_pair:
-            self._advance()
+    def _act_next_group(self):
+        if not self._current_group:
+            self._load_next_group()
             return
-        left = self._current_pair[0]
+            
         self._set_review_state(active=False)
-        self.panel_right.flash_green()
-        self.update_idletasks()
-        send_to_trash(left)
-        self._purge_deleted(left)
-        self.after(FLASH_MS, self._advance)
-
-    def _act_trash_both(self):
-        if self._current_pair:
-            left, right = self._current_pair
-            send_to_trash(left)
-            send_to_trash(right)
-            self._purge_deleted(left, right)
-        self._advance()
-
-    def _act_del_left(self):
-        if not self._current_pair:
-            return
-        path = self._current_pair[0]
-        if messagebox.askyesno(
-            "Permanent Delete",
-            f"Permanently delete (NO Recycle Bin):\n\n{path}\n\nThis cannot be undone!",
-        ):
-            delete_permanent(path)
-            self._purge_deleted(path)
-            self._advance()
-
-    def _act_del_right(self):
-        if not self._current_pair:
-            return
-        path = self._current_pair[1]
-        if messagebox.askyesno(
-            "Permanent Delete",
-            f"Permanently delete (NO Recycle Bin):\n\n{path}\n\nThis cannot be undone!",
-        ):
-            delete_permanent(path)
-            self._purge_deleted(path)
-            self._advance()
-
-    def _advance(self):
-        self._current_pair = None
-        self._load_next_pair()
+        trashed_paths = []
+        for i, var in enumerate(self._dup_vars):
+            if var.get() == "trash":
+                path = self._current_group[i]
+                trashed_paths.append(path)
+                send_to_trash(path)
+                
+        if trashed_paths:
+            self._purge_deleted(*trashed_paths)
+            
+        self.after(200, self._load_next_group)
 
     # ── UI helpers ──────────────────────────────────────────────────────────
     def _set_review_state(self, active: bool):
         state = "normal" if active else "disabled"
-        for btn in self._action_buttons:
-            btn.config(state=state)
+        if hasattr(self, '_btn_keep_all'):
+            self._btn_keep_all.config(state=state)
+            self._btn_trash_all.config(state=state)
+            self._btn_next_group.config(state=state)
 
     def _update_status(self, msg: str):
         self.lbl_status.config(text=msg)

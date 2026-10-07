@@ -277,12 +277,14 @@ class DuplicateScanner:
         stats: ScanStats,
         hash_threshold: int = DEFAULT_HASH_THRESHOLD,
         use_ai_scan: bool = False,
+        ai_detection_distance: float = 0.05,
     ):
         self.root_dir = root_dir
         self.result_queue = result_queue
         self.stats = stats
         self.hash_threshold = hash_threshold
         self.use_ai_scan = use_ai_scan
+        self.ai_detection_distance = ai_detection_distance
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
 
@@ -393,29 +395,31 @@ class DuplicateScanner:
 
     def _emit_pairs(self, hashed: list[tuple[imagehash.ImageHash, Path]]):
         """
-        Emit unique duplicate pairs.
-
-        For threshold == 0 we use a dict (O(n)) grouping identical hash strings.
-        For threshold  > 0 we do pairwise comparison (O(n²)) — acceptable for
-        typical photo libraries (thousands of images, not millions).
+        Emit clusters of duplicate paths.
         """
         if self.hash_threshold == 0:
             buckets: dict[str, list[Path]] = {}
             for h, p in hashed:
                 buckets.setdefault(str(h), []).append(p)
-            seen: set[tuple[str, str]] = set()
             for paths in buckets.values():
-                for i, a in enumerate(paths):
-                    for b in paths[i + 1:]:
-                        if self._stop_event.is_set():
-                            return
-                        key = (min(str(a), str(b)), max(str(a), str(b)))
-                        if key not in seen:
-                            seen.add(key)
-                            self.result_queue.put((a, b))
-                            self.stats.inc_pairs()
+                if len(paths) > 1:
+                    if self._stop_event.is_set():
+                        return
+                    self.result_queue.put(paths)
+                    self.stats.inc_pairs(len(paths) - 1)
         else:
-            seen: set[tuple[str, str]] = set()
+            parent = {i: i for i in range(len(hashed))}
+            def find(i):
+                if parent[i] == i:
+                    return i
+                parent[i] = find(parent[i])
+                return parent[i]
+            def union(i, j):
+                root_i = find(i)
+                root_j = find(j)
+                if root_i != root_j:
+                    parent[root_i] = root_j
+
             for i in range(len(hashed)):
                 if self._stop_event.is_set():
                     return
@@ -423,11 +427,17 @@ class DuplicateScanner:
                 for j in range(i + 1, len(hashed)):
                     hj, pj = hashed[j]
                     if hi - hj <= self.hash_threshold:
-                        key = (min(str(pi), str(pj)), max(str(pi), str(pj)))
-                        if key not in seen:
-                            seen.add(key)
-                            self.result_queue.put((pi, pj))
-                            self.stats.inc_pairs()
+                        union(i, j)
+            
+            groups = {}
+            for i in range(len(hashed)):
+                root = find(i)
+                groups.setdefault(root, []).append(hashed[i][1])
+            
+            for paths in groups.values():
+                if len(paths) > 1:
+                    self.result_queue.put(paths)
+                    self.stats.inc_pairs(len(paths) - 1)
 
     def _compute_ai_embedding(self, path: Path) -> list[float] | None:
         import mimetypes
@@ -496,12 +506,20 @@ class DuplicateScanner:
             # Since vectors are pre-normalized, cosine similarity is just the dot product
             return sum(x * y for x, y in zip(a, b))
             
-        # For AI scan, require > 0.90 similarity.
-        # Can scale with hash_threshold if desired, but 0.90 is a solid baseline for semantic similarity
-        # hash_threshold 6 -> 0.90, hash_threshold 0 -> 0.99
-        sim_threshold = max(0.85, 1.0 - (self.hash_threshold / 50.0))
+        sim_threshold = 1.0 - self.ai_detection_distance
 
-        seen = set()
+        parent = {i: i for i in range(len(hashed_ai))}
+        def find(i):
+            if parent[i] == i:
+                return i
+            parent[i] = find(parent[i])
+            return parent[i]
+        def union(i, j):
+            root_i = find(i)
+            root_j = find(j)
+            if root_i != root_j:
+                parent[root_i] = root_j
+
         for i in range(len(hashed_ai)):
             if self._stop_event.is_set():
                 return
@@ -509,11 +527,17 @@ class DuplicateScanner:
             for j in range(i + 1, len(hashed_ai)):
                 embj, pj = hashed_ai[j]
                 if cosine_sim(embi, embj) >= sim_threshold:
-                    key = (min(str(pi), str(pj)), max(str(pi), str(pj)))
-                    if key not in seen:
-                        seen.add(key)
-                        self.result_queue.put((pi, pj))
-                        self.stats.inc_pairs()
+                    union(i, j)
+
+        groups = {}
+        for i in range(len(hashed_ai)):
+            root = find(i)
+            groups.setdefault(root, []).append(hashed_ai[i][1])
+            
+        for paths in groups.values():
+            if len(paths) > 1:
+                self.result_queue.put(paths)
+                self.stats.inc_pairs(len(paths) - 1)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
