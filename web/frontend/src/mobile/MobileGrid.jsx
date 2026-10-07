@@ -1,5 +1,5 @@
 import React from 'react';
-import { Folder, Search, TagOff } from 'lucide-react';
+import { Folder, Search, Tag } from 'lucide-react';
 
 export default function MobileGrid({
   results,
@@ -88,7 +88,7 @@ export default function MobileGrid({
             opacity: loading ? 0.5 : 1
           }}
         >
-          <TagOff size={20} style={{ marginRight: '8px' }} />
+          <Tag size={20} style={{ marginRight: '8px' }} />
           Untagged Photos
         </button>
 
