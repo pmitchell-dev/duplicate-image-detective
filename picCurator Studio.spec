@@ -22,7 +22,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='PicCurator Studio v14',
+    name='PicCurator Studio v17',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

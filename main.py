@@ -198,29 +198,37 @@ PREVIEW_SIZE    = (460, 520)  # max canvas size (px)
 # ─────────────────────────────────────────────────────────────────────────────
 # Helpers: file operations & formatting
 # ─────────────────────────────────────────────────────────────────────────────
-def send_to_trash(path: Path) -> bool:
-    """Returns True on success, False if the file was already gone."""
+def _safe_move_to_recycle_bin(path: Path) -> bool:
     if not path.exists():
         return False
-    try:
-        import send2trash
-        send2trash.send2trash(str(path))
         
-        if path.exists():
-            import shutil
-            import time
-            recycle_dir = path.parent / ".recyclebin"
-            recycle_dir.mkdir(exist_ok=True)
-            dest = recycle_dir / path.name
-            if dest.exists():
-                dest = recycle_dir / f"{path.stem}_{int(time.time())}{path.suffix}"
-            shutil.copy2(str(path), str(dest))
-            path.unlink()
-            
-            if path.exists():
-                raise Exception("File still exists after manual move to .recyclebin")
-                
-        return True
+    import shutil
+    import time
+    recycle_dir = Path("/mnt/backups/recyclebin")
+    
+    try:
+        recycle_dir.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        # Fallback if network/mount is unavailable
+        recycle_dir = path.parent / ".recyclebin"
+        recycle_dir.mkdir(exist_ok=True)
+        
+    dest = recycle_dir / path.name
+    if dest.exists():
+        dest = recycle_dir / f"{path.stem}_{int(time.time())}{path.suffix}"
+        
+    shutil.copy2(str(path), str(dest))
+    path.unlink()
+    
+    if path.exists():
+        raise Exception("File still exists in original location after unlink.")
+        
+    return True
+
+def send_to_trash(path: Path) -> bool:
+    """Returns True on success, False if the file was already gone."""
+    try:
+        return _safe_move_to_recycle_bin(path)
     except Exception as e:
         messagebox.showerror("Trash Error", f"Could not recycle:\n{path}\n\n{e}")
         return False
@@ -228,11 +236,8 @@ def send_to_trash(path: Path) -> bool:
 
 def delete_permanent(path: Path) -> bool:
     """Permanently deletes a file. Returns True on success."""
-    if not path.exists():
-        return False
     try:
-        path.unlink()
-        return True
+        return _safe_move_to_recycle_bin(path)
     except Exception as e:
         messagebox.showerror("Delete Error", f"Could not delete:\n{path}\n\n{e}")
         return False
@@ -1099,7 +1104,7 @@ class PicCuratorStudioApp(tk.Tk):
     def _open_settings_popup(self):
         popup = tk.Toplevel(self)
         popup.title("Settings")
-        popup.geometry("350x180")
+        popup.geometry("450x320")
         popup.configure(bg=BG_DARK)
         popup.transient(self)
         popup.grab_set()
@@ -1108,13 +1113,26 @@ class PicCuratorStudioApp(tk.Tk):
         frame.pack(fill="both", expand=True)
 
         tk.Label(frame, text="Immich Detection Distance:", font=(FONT_FAMILY, 10, "bold"), bg=BG_PANEL, fg=TEXT_MAIN).pack(anchor="w")
-        tk.Label(frame, text="Higher values detect more duplicates (0.001 - 0.1).", font=(FONT_FAMILY, 8), bg=BG_PANEL, fg=TEXT_DIM).pack(anchor="w", pady=(0, 10))
+        tk.Label(frame, text="Higher values detect more duplicates (0.001 - 0.1).", font=(FONT_FAMILY, 8), bg=BG_PANEL, fg=TEXT_DIM).pack(anchor="w", pady=(0, 5))
+        entry_dist = tk.Entry(frame, textvariable=self.var_immich_detection_distance, font=(FONT_FAMILY, 10), bg=BG_CARD, fg=TEXT_MAIN, insertbackground=TEXT_MAIN, relief="flat")
+        entry_dist.pack(fill="x", ipady=3, pady=(0, 15))
 
-        entry = tk.Entry(frame, textvariable=self.var_immich_detection_distance, font=(FONT_FAMILY, 10), bg=BG_CARD, fg=TEXT_MAIN, insertbackground=TEXT_MAIN, relief="flat")
-        entry.pack(fill="x", ipady=3)
+        tk.Label(frame, text="Local Path:", font=(FONT_FAMILY, 10, "bold"), bg=BG_PANEL, fg=TEXT_MAIN).pack(anchor="w")
+        tk.Label(frame, text="Mapped network drive path for local PC (e.g. Z:\\family_photos)", font=(FONT_FAMILY, 8), bg=BG_PANEL, fg=TEXT_DIM).pack(anchor="w", pady=(0, 5))
+        
+        row_loc = tk.Frame(frame, bg=BG_PANEL)
+        row_loc.pack(fill="x", pady=(0, 15))
+        entry_loc = tk.Entry(row_loc, textvariable=self.var_immich_local_path, font=(FONT_FAMILY, 10), bg=BG_CARD, fg=TEXT_MAIN, insertbackground=TEXT_MAIN, relief="flat")
+        entry_loc.pack(side="left", fill="x", expand=True, ipady=3, padx=(0, 5))
+        self._make_button(row_loc, "Browse", self._on_immich_browse_local_path, fg=BG_DARK, bg=ACCENT_GREEN).pack(side="right")
+
+        tk.Label(frame, text="Server Prefix:", font=(FONT_FAMILY, 10, "bold"), bg=BG_PANEL, fg=TEXT_MAIN).pack(anchor="w")
+        tk.Label(frame, text="Internal path of the Immich container (e.g. /usr/src/app/...)", font=(FONT_FAMILY, 8), bg=BG_PANEL, fg=TEXT_DIM).pack(anchor="w", pady=(0, 5))
+        entry_srv = tk.Entry(frame, textvariable=self.var_immich_server_prefix, font=(FONT_FAMILY, 10), bg=BG_CARD, fg=TEXT_MAIN, insertbackground=TEXT_MAIN, relief="flat")
+        entry_srv.pack(fill="x", ipady=3)
 
         btn_close = tk.Button(frame, text="Close", font=(FONT_FAMILY, 9, "bold"), bg=ACCENT_BLUE, fg=BG_DARK, relief="flat", cursor="hand2", command=popup.destroy)
-        btn_close.pack(pady=(15, 0))
+        btn_close.pack(pady=(20, 0))
 
     def _build_topbar(self):
         bar = tk.Frame(self, bg=BG_PANEL, pady=10)
@@ -1753,15 +1771,15 @@ class PicCuratorStudioApp(tk.Tk):
 
         # Reset state
         self._match_counts.clear()
-        self._pending_pairs.clear()
-        self._current_pair = None
+        self._pending_groups.clear()
+        self._current_group = None
         self._scan_done = False
         self._scan_running = True
-        self._pair_index = 0
-        self.panel_left.show_placeholder("Scanning…\nPlease wait.")
-        self.panel_right.show_placeholder("Scanning…\nPlease wait.")
-        self.lbl_pair_counter.config(text="")
-        self.lbl_similarity.config(text="")
+        self._group_index = 0
+        self._clear_dup_panels()
+        placeholder = tk.Label(self.dup_container, text="Scanning…\nPlease wait.", font=(FONT_FAMILY, 14, "bold"), bg=BG_DARK, fg=TEXT_DIM, justify="center")
+        placeholder.pack(expand=True, fill="both", pady=50, padx=50)
+        self.lbl_group_counter.config(text="")
         self._set_review_state(active=False)
         self._btn_scan.config(state="disabled")
         self._btn_browse.config(state="disabled")
@@ -3194,13 +3212,12 @@ class PicCuratorStudioApp(tk.Tk):
         srv_prefix = self.var_immich_server_prefix.get().strip()
 
         self._match_counts.clear()
-        self._pending_pairs.clear()
-        self._current_pair = None
-        self._pair_index = 0
+        self._pending_groups.clear()
+        self._current_group = None
+        self._group_index = 0
         self._scan_running = False
         self._scan_done = True
 
-        import itertools
         for group in res:
             assets = group.get("assets", [])
             paths = []
@@ -3214,19 +3231,18 @@ class PicCuratorStudioApp(tk.Tk):
                     paths.append(path_obj)
             
             if len(paths) >= 2:
-                for p1, p2 in itertools.combinations(paths, 2):
-                    self._pending_pairs.append((p1, p2))
-                    self._match_counts[p1] = self._match_counts.get(p1, 0) + 1
-                    self._match_counts[p2] = self._match_counts.get(p2, 0) + 1
+                self._pending_groups.append(paths)
+                for p in paths:
+                    self._match_counts[p] = self._match_counts.get(p, 0) + 1
 
-        if not self._pending_pairs:
+        if not self._pending_groups:
             self._update_status("Found duplicates in Immich, but none mapped to local files.")
             messagebox.showinfo("No Local Files", "Could not find any local matching files for the duplicates.")
             return
 
-        self._update_status(f"Loaded {len(self._pending_pairs)} duplicate pair(s) from Immich.")
+        self._update_status(f"Loaded {len(self._pending_groups)} duplicate group(s) from Immich.")
         self._switch_mode("duplicates")
-        self._load_next_pair()
+        self._load_next_group()
 
     # ── 1. Asset Info & Metadata Sub-Tab ─────────────────────────────
     def _build_immich_sub_asset_info(self, parent: tk.Frame):
@@ -3491,35 +3507,12 @@ class PicCuratorStudioApp(tk.Tk):
             anchor="w",
         ).pack(anchor="w", pady=(6, 0))
 
-        # Local Path Mapping & Mass Edit Bridge Card
-        map_card = tk.Frame(right_col, bg=BG_PANEL, padx=12, pady=10)
-        map_card.pack(fill="x", pady=(10, 0))
-
-        tk.Label(
-            map_card,
-            text="Local Folder Mapping for Mass Edit",
-            font=(FONT_FAMILY, 9, "bold"),
-            bg=BG_PANEL,
-            fg=ACCENT_BLUE,
-        ).pack(anchor="w", pady=(0, 4))
-
-        # Target Local Folder Row
-        row_loc = tk.Frame(map_card, bg=BG_PANEL)
-        row_loc.pack(fill="x", pady=2)
-        tk.Label(row_loc, text="Local Path:", font=(FONT_FAMILY, 8, "bold"), bg=BG_PANEL, fg=TEXT_MAIN, width=12, anchor="w").pack(side="left")
-        e_loc = tk.Entry(row_loc, textvariable=self.var_immich_local_path, font=(FONT_FAMILY, 8), bg=BG_CARD, fg=TEXT_MAIN, insertbackground=TEXT_MAIN, relief="flat")
-        e_loc.pack(side="left", fill="x", expand=True, padx=(0, 6), ipady=2)
-        self._make_button(row_loc, "📁 Target Folder (Browse)", self._on_immich_browse_local_path, fg=BG_DARK, bg=ACCENT_GREEN).pack(side="right")
-
-        # Server Path Prefix & Open in Mass Edit Row
-        row_srv = tk.Frame(map_card, bg=BG_PANEL)
-        row_srv.pack(fill="x", pady=2)
-        tk.Label(row_srv, text="Server Prefix:", font=(FONT_FAMILY, 8, "bold"), bg=BG_PANEL, fg=TEXT_MAIN, width=12, anchor="w").pack(side="left")
-        e_srv = tk.Entry(row_srv, textvariable=self.var_immich_server_prefix, font=(FONT_FAMILY, 8), bg=BG_CARD, fg=TEXT_MAIN, insertbackground=TEXT_MAIN, relief="flat")
-        e_srv.pack(side="left", fill="x", expand=True, padx=(0, 6), ipady=2)
+        # Action Buttons
+        action_card = tk.Frame(right_col, bg=BG_PANEL, padx=12, pady=10)
+        action_card.pack(fill="x", pady=(10, 0))
 
         self.btn_open_in_mass_edit = self._make_button(
-            row_srv,
+            action_card,
             "📂 Open in Mass Edit",
             self._on_immich_open_person_in_mass_edit,
             fg=BG_DARK,
@@ -3575,35 +3568,12 @@ class PicCuratorStudioApp(tk.Tk):
             fg=ACCENT_BLUE,
         ).pack(side="bottom", anchor="w", pady=(6, 0))
 
-        # Local Path Mapping & Mass Edit Bridge Card
-        map_card = tk.Frame(body, bg=BG_PANEL, padx=12, pady=10)
-        map_card.pack(fill="x", padx=10, pady=(0, 10))
-
-        tk.Label(
-            map_card,
-            text="Local Folder Mapping for Mass Edit",
-            font=(FONT_FAMILY, 9, "bold"),
-            bg=BG_PANEL,
-            fg=ACCENT_BLUE,
-        ).pack(anchor="w", pady=(0, 4))
-
-        # Target Local Folder Row
-        row_loc = tk.Frame(map_card, bg=BG_PANEL)
-        row_loc.pack(fill="x", pady=2)
-        tk.Label(row_loc, text="Local Path:", font=(FONT_FAMILY, 8, "bold"), bg=BG_PANEL, fg=TEXT_MAIN, width=12, anchor="w").pack(side="left")
-        e_loc = tk.Entry(row_loc, textvariable=self.var_immich_local_path, font=(FONT_FAMILY, 8), bg=BG_CARD, fg=TEXT_MAIN, insertbackground=TEXT_MAIN, relief="flat")
-        e_loc.pack(side="left", fill="x", expand=True, padx=(0, 6), ipady=2)
-        self._make_button(row_loc, "🎯 Target Folder (Browse)", self._on_immich_browse_local_path, fg=BG_DARK, bg=ACCENT_GREEN).pack(side="right")
-
-        # Server Path Prefix & Open in Mass Edit Row
-        row_srv = tk.Frame(map_card, bg=BG_PANEL)
-        row_srv.pack(fill="x", pady=2)
-        tk.Label(row_srv, text="Server Prefix:", font=(FONT_FAMILY, 8, "bold"), bg=BG_PANEL, fg=TEXT_MAIN, width=12, anchor="w").pack(side="left")
-        e_srv = tk.Entry(row_srv, textvariable=self.var_immich_server_prefix, font=(FONT_FAMILY, 8), bg=BG_CARD, fg=TEXT_MAIN, insertbackground=TEXT_MAIN, relief="flat")
-        e_srv.pack(side="left", fill="x", expand=True, padx=(0, 6), ipady=2)
+        # Action Buttons
+        action_card = tk.Frame(body, bg=BG_PANEL, padx=12, pady=10)
+        action_card.pack(fill="x", padx=10, pady=(0, 10))
 
         self.btn_open_search_in_mass_edit = self._make_button(
-            row_srv,
+            action_card,
             "📂 Open in Mass Edit",
             self._on_immich_open_search_in_mass_edit,
             fg=BG_DARK,
