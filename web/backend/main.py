@@ -496,6 +496,7 @@ def trash_images(req: PathsAction):
     trashed = 0
     recycle_dir = "/mnt/backups/recyclebin"
     os.makedirs(recycle_dir, exist_ok=True)
+    errors = []
     for p in req.paths:
         try:
             if os.path.exists(p):
@@ -504,10 +505,21 @@ def trash_images(req: PathsAction):
                 if os.path.exists(dest):
                     name, ext = os.path.splitext(basename)
                     dest = os.path.join(recycle_dir, f"{name}_{int(time.time())}{ext}")
-                shutil.move(p, dest)
+                
+                shutil.copy2(p, dest)
+                os.remove(p)
+                
+                if os.path.exists(p):
+                    raise Exception("File still exists after removal attempt.")
+                
                 trashed += 1
         except Exception as e:
             print(f"Error trashing {p}: {e}")
+            errors.append(f"{p}: {str(e)}")
+            
+    if errors:
+        raise HTTPException(status_code=500, detail=f"Failed to trash some images: {'; '.join(errors)}")
+        
     return {"status": "success", "trashed_count": trashed}
 
 @app.get("/api/untagged/count")

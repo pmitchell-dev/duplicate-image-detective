@@ -205,6 +205,21 @@ def send_to_trash(path: Path) -> bool:
     try:
         import send2trash
         send2trash.send2trash(str(path))
+        
+        if path.exists():
+            import shutil
+            import time
+            recycle_dir = path.parent / ".recyclebin"
+            recycle_dir.mkdir(exist_ok=True)
+            dest = recycle_dir / path.name
+            if dest.exists():
+                dest = recycle_dir / f"{path.stem}_{int(time.time())}{path.suffix}"
+            shutil.copy2(str(path), str(dest))
+            path.unlink()
+            
+            if path.exists():
+                raise Exception("File still exists after manual move to .recyclebin")
+                
         return True
     except Exception as e:
         messagebox.showerror("Trash Error", f"Could not recycle:\n{path}\n\n{e}")
