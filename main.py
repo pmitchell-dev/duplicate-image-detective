@@ -1166,6 +1166,21 @@ class PicCuratorStudioApp(tk.Tk):
         self._btn_scan.pack(side="right", padx=(0, 6))
         self._btn_scan.config(state="disabled")
 
+        self.var_use_ai_scan = tk.BooleanVar(value=False)
+        self._chk_use_ai_scan = tk.Checkbutton(
+            self._frame_dir_controls,
+            text="Use AI Semantic Scan",
+            variable=self.var_use_ai_scan,
+            bg=BG_PANEL,
+            fg=TEXT_MAIN,
+            selectcolor=BG_DARK,
+            activebackground=BG_PANEL,
+            activeforeground=TEXT_MAIN,
+            font=(FONT_FAMILY, 9),
+            cursor="hand2"
+        )
+        self._chk_use_ai_scan.pack(side="right", padx=(0, 16))
+
         # ── 2. Immich Connection Header Controls (Replaces Directory in Immich mode)
         self._frame_immich_header_controls = tk.Frame(bar, bg=BG_PANEL)
         # Packed dynamically when Immich mode is selected
@@ -1801,6 +1816,7 @@ class PicCuratorStudioApp(tk.Tk):
             result_queue=self._scan_queue,
             stats=self._stats,
             hash_threshold=HASH_THRESHOLD,
+            use_ai_scan=self.var_use_ai_scan.get(),
         )
         self._scanner.start()
         self._update_status("🔍  Scanning…")

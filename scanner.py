@@ -276,11 +276,13 @@ class DuplicateScanner:
         result_queue: "queue.Queue[object]",
         stats: ScanStats,
         hash_threshold: int = DEFAULT_HASH_THRESHOLD,
+        use_ai_scan: bool = False,
     ):
         self.root_dir = root_dir
         self.result_queue = result_queue
         self.stats = stats
         self.hash_threshold = hash_threshold
+        self.use_ai_scan = use_ai_scan
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
 
@@ -306,19 +308,76 @@ class DuplicateScanner:
             image_paths = self._collect_image_paths()
             self.stats.set_total(len(image_paths))
 
-            # Phase 1: compute hashes for all images
-            hashed: list[tuple[imagehash.ImageHash, Path]] = []
-            for path in image_paths:
-                if self._stop_event.is_set():
-                    return
-                h = self._compute_hash(path)
-                if h is not None:
-                    hashed.append((h, path))
-                self.stats.inc_processed()
+            # Phase 1: compute hashes/embeddings for all images
+            hashed_phash = []
+            hashed_ai = []
+            
+            if self.use_ai_scan:
+                import json
+                cache_file = Path(self.root_dir) / ".piccurator_ai_cache.json"
+                cache_data = {}
+                if cache_file.exists():
+                    try:
+                        with open(cache_file, "r", encoding="utf-8") as f:
+                            cache_data = json.load(f)
+                    except Exception:
+                        pass
+                
+                cache_updated = False
+                
+                for path in image_paths:
+                    if self._stop_event.is_set():
+                        # Try to save cache before exiting early
+                        if cache_updated:
+                            try:
+                                with open(cache_file, "w", encoding="utf-8") as f:
+                                    json.dump(cache_data, f)
+                            except Exception:
+                                pass
+                        return
+                    
+                    try:
+                        rel_path = path.relative_to(self.root_dir).as_posix()
+                        mtime = path.stat().st_mtime
+                    except Exception:
+                        self.stats.inc_processed()
+                        continue
+                        
+                    if rel_path in cache_data and cache_data[rel_path].get("mtime") == mtime:
+                        emb = cache_data[rel_path].get("vector")
+                    else:
+                        emb = self._compute_ai_embedding(path)
+                        if emb is not None:
+                            cache_data[rel_path] = {"mtime": mtime, "vector": emb}
+                            cache_updated = True
+                            
+                    if emb is not None:
+                        hashed_ai.append((emb, path))
+                        
+                    self.stats.inc_processed()
+                    
+                # Save cache at the end of the run
+                if cache_updated:
+                    try:
+                        with open(cache_file, "w", encoding="utf-8") as f:
+                            json.dump(cache_data, f)
+                    except Exception:
+                        pass
+            else:
+                for path in image_paths:
+                    if self._stop_event.is_set():
+                        return
+                    h = self._compute_hash(path)
+                    if h is not None:
+                        hashed_phash.append((h, path))
+                    self.stats.inc_processed()
 
             # Phase 2: emit all pairs within threshold distance
             if not self._stop_event.is_set():
-                self._emit_pairs(hashed)
+                if self.use_ai_scan:
+                    self._emit_ai_pairs(hashed_ai)
+                else:
+                    self._emit_pairs(hashed_phash)
         finally:
             self.result_queue.put(SCAN_DONE)
 
@@ -369,6 +428,92 @@ class DuplicateScanner:
                             seen.add(key)
                             self.result_queue.put((pi, pj))
                             self.stats.inc_pairs()
+
+    def _compute_ai_embedding(self, path: Path) -> list[float] | None:
+        import mimetypes
+        import time
+        import urllib.request
+        import json
+        import io
+        from PIL import Image
+
+        boundary = f"----PicCuratorAIBoundary{int(time.time()*1000)}"
+        entries_json = json.dumps({"clip": {"visual": {"modelName": "ViT-B-32__openai"}}})
+        
+        body_parts = []
+        body_parts.append(f"--{boundary}\r\nContent-Disposition: form-data; name=\"entries\"\r\n\r\n{entries_json}\r\n".encode("utf-8"))
+        
+        # Open the image, convert to RGB (strips alpha/16-bit), and downscale to 512x512.
+        # This guarantees TIFF compatibility and reduces 50MB files to 50KB for fast networking.
+        try:
+            with Image.open(path) as img:
+                img = img.convert("RGB")
+                img.thumbnail((512, 512), Image.Resampling.LANCZOS)
+                img_io = io.BytesIO()
+                img.save(img_io, format="JPEG", quality=85)
+                file_data = img_io.getvalue()
+        except Exception:
+            return None
+            
+        file_header = f"--{boundary}\r\nContent-Disposition: form-data; name=\"image\"; filename=\"image.jpg\"\r\nContent-Type: image/jpeg\r\n\r\n".encode("utf-8")
+        file_footer = b"\r\n"
+        end_boundary = f"--{boundary}--\r\n".encode("utf-8")
+        full_body = b"".join(body_parts) + file_header + file_data + file_footer + end_boundary
+        
+        headers = {
+            "Content-Type": f"multipart/form-data; boundary={boundary}",
+            "Accept": "application/json",
+            "User-Agent": "PicCuratorStudio/4.0",
+        }
+        
+        req = urllib.request.Request("http://localhost:3003/predict", data=full_body, headers=headers, method="POST")
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                body = resp.read().decode("utf-8", errors="ignore")
+                res_json = json.loads(body)
+                def _find_list(d):
+                    if isinstance(d, list):
+                        return d
+                    if isinstance(d, dict):
+                        for v in d.values():
+                            res = _find_list(v)
+                            if res is not None:
+                                return res
+                    return None
+                
+                emb = _find_list(res_json)
+                if emb and isinstance(emb, list) and len(emb) > 10:
+                    # Pre-normalize the vector to make comparison O(N) fast without square roots
+                    norm = sum(x * x for x in emb) ** 0.5
+                    if norm == 0: return emb
+                    return [x / norm for x in emb]
+                return None
+        except Exception as e:
+            return None
+
+    def _emit_ai_pairs(self, hashed_ai: list[tuple[list[float], Path]]):
+        def cosine_sim(a, b):
+            # Since vectors are pre-normalized, cosine similarity is just the dot product
+            return sum(x * y for x, y in zip(a, b))
+            
+        # For AI scan, require > 0.90 similarity.
+        # Can scale with hash_threshold if desired, but 0.90 is a solid baseline for semantic similarity
+        # hash_threshold 6 -> 0.90, hash_threshold 0 -> 0.99
+        sim_threshold = max(0.85, 1.0 - (self.hash_threshold / 50.0))
+
+        seen = set()
+        for i in range(len(hashed_ai)):
+            if self._stop_event.is_set():
+                return
+            embi, pi = hashed_ai[i]
+            for j in range(i + 1, len(hashed_ai)):
+                embj, pj = hashed_ai[j]
+                if cosine_sim(embi, embj) >= sim_threshold:
+                    key = (min(str(pi), str(pj)), max(str(pi), str(pj)))
+                    if key not in seen:
+                        seen.add(key)
+                        self.result_queue.put((pi, pj))
+                        self.stats.inc_pairs()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
