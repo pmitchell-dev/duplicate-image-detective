@@ -3146,43 +3146,27 @@ class PicCuratorStudioApp(tk.Tk):
                 frame.pack_forget()
 
     def _build_immich_sub_duplicates(self, parent: tk.Frame):
-        body = tk.Frame(parent, bg=BG_DARK)
+        body = tk.Frame(parent, bg=BG_DARK, padx=20, pady=20)
         body.pack(fill="both", expand=True)
 
-        # Header and button
-        hdr_frame = tk.Frame(body, bg=BG_DARK)
-        hdr_frame.pack(fill="x", padx=10, pady=(0, 10))
-
         tk.Label(
-            hdr_frame,
-            text="Query Immich for duplicate asset groups.",
-            font=(FONT_FAMILY, 9),
+            body,
+            text="Query Immich for duplicate asset groups.\n\nResults will be mapped to your local files and automatically opened in the native Duplicate Scanner tab so you can review them side-by-side.",
+            font=(FONT_FAMILY, 10),
             bg=BG_DARK,
             fg=TEXT_MAIN,
-        ).pack(side="left")
+            justify="left"
+        ).pack(anchor="w", pady=(0, 20))
 
         self.btn_immich_get_dupes = self._make_button(
-            hdr_frame,
-            "🔍 Find Duplicates",
+            body,
+            "🔍 Find Duplicates & Open Scanner",
             self._on_immich_get_duplicates,
             fg=BG_DARK,
             bg=ACCENT_BLUE,
+            font=(FONT_FAMILY, 11, "bold")
         )
-        self.btn_immich_get_dupes.pack(side="right")
-
-        # Scrollable area
-        canvas = tk.Canvas(body, bg=BG_PANEL, highlightthickness=0)
-        scroll = ttk.Scrollbar(body, orient="vertical", command=canvas.yview)
-        
-        self.frame_immich_dupes_container = tk.Frame(canvas, bg=BG_PANEL, padx=10, pady=10)
-        self.frame_immich_dupes_container.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
-        
-        canvas_win = canvas.create_window((0, 0), window=self.frame_immich_dupes_container, anchor="nw")
-        canvas.bind("<Configure>", lambda e: canvas.itemconfig(canvas_win, width=e.width))
-        canvas.configure(yscrollcommand=scroll.set)
-        
-        canvas.pack(side="left", fill="both", expand=True, padx=(10, 0))
-        scroll.pack(side="right", fill="y", padx=(0, 10))
+        self.btn_immich_get_dupes.pack(anchor="w")
 
     def _on_immich_get_duplicates(self):
         url = self.var_immich_url.get().strip()
@@ -3191,12 +3175,15 @@ class PicCuratorStudioApp(tk.Tk):
             self._update_status("Immich URL and API Key are required.")
             return
 
+        local_base = self.var_immich_local_path.get().strip()
+        srv_prefix = self.var_immich_server_prefix.get().strip()
+        if not local_base or not srv_prefix:
+            messagebox.showerror("Mapping Required", "Please fill out Local Path and Server Prefix to map paths.")
+            return
+
         self._update_status("Querying Immich for duplicates...")
         self.btn_immich_get_dupes.config(state="disabled")
         
-        for w in self.frame_immich_dupes_container.winfo_children():
-            w.destroy()
-
         def _bg():
             ok, res = immich_get_duplicates(url, key)
             self.after(0, self._on_immich_duplicates_result, ok, res)
@@ -3211,67 +3198,46 @@ class PicCuratorStudioApp(tk.Tk):
 
         if not res:
             self._update_status("No duplicates found in Immich.")
-            tk.Label(
-                self.frame_immich_dupes_container,
-                text="No duplicates found.",
-                font=(FONT_FAMILY, 10, "bold"),
-                bg=BG_PANEL,
-                fg=ACCENT_GREEN
-            ).pack(pady=20)
+            messagebox.showinfo("No Duplicates", "Immich did not return any duplicate groups.")
             return
 
-        self._update_status(f"Found {len(res)} duplicate groups.")
-        
-        for i, group in enumerate(res):
+        local_base = self.var_immich_local_path.get().strip()
+        srv_prefix = self.var_immich_server_prefix.get().strip()
+
+        self._match_counts.clear()
+        self._pending_pairs.clear()
+        self._current_pair = None
+        self._pair_index = 0
+        self._scan_running = False
+        self._scan_done = True
+
+        import itertools
+        for group in res:
             assets = group.get("assets", [])
-            if len(assets) < 2:
-                continue
-
-            grp_frame = tk.Frame(self.frame_immich_dupes_container, bg=BG_CARD, padx=10, pady=10)
-            grp_frame.pack(fill="x", pady=5)
+            paths = []
+            for a in assets:
+                p = a.get("originalPath", "")
+                if p.startswith(srv_prefix):
+                    p = p.replace(srv_prefix, local_base, 1)
+                p = p.replace("/", "\\") if os.name == "nt" else p
+                path_obj = Path(p)
+                if path_obj.exists():
+                    paths.append(path_obj)
             
-            tk.Label(
-                grp_frame,
-                text=f"Duplicate Group {i+1} ({len(assets)} assets)",
-                font=(FONT_FAMILY, 10, "bold"),
-                bg=BG_CARD,
-                fg=ACCENT_AMBER
-            ).pack(anchor="w", pady=(0, 5))
-            
-            for asset in assets:
-                orig_path = asset.get("originalPath", "Unknown Path")
-                
-                row = tk.Frame(grp_frame, bg=BG_CARD)
-                row.pack(fill="x", pady=2)
-                
-                tk.Label(row, text=orig_path, font=(FONT_FAMILY, 8), bg=BG_CARD, fg=TEXT_MAIN).pack(side="left", fill="x", expand=True)
-                
-                def _trash_local(p=orig_path, r=row):
-                    local_base = self.var_immich_local_path.get().strip()
-                    srv_prefix = self.var_immich_server_prefix.get().strip()
-                    
-                    target_path = p
-                    if local_base and srv_prefix and p.startswith(srv_prefix):
-                        target_path = p.replace(srv_prefix, local_base, 1)
-                        
-                    target_path = target_path.replace("/", "\\") if os.name == "nt" else target_path
-                    
-                    if os.path.exists(target_path):
-                        try:
-                            from pathlib import Path
-                            if send_to_trash(Path(target_path)):
-                                self._update_status(f"Trashed: {target_path}")
-                                r.destroy()
-                            else:
-                                self._update_status(f"Failed to trash: {target_path}")
-                        except Exception as e:
-                            self._update_status(f"Error trashing {target_path}: {e}")
-                            messagebox.showerror("Trash Error", str(e))
-                    else:
-                        messagebox.showerror("Not Found", f"Local file not found:\\n{target_path}\\nMake sure your Server Prefix to Local Folder mapping is correct.")
+            if len(paths) >= 2:
+                for p1, p2 in itertools.combinations(paths, 2):
+                    self._pending_pairs.append((p1, p2))
+                    self._match_counts[p1] = self._match_counts.get(p1, 0) + 1
+                    self._match_counts[p2] = self._match_counts.get(p2, 0) + 1
 
-                btn_trash = tk.Button(row, text="🗑️ Trash Local", font=(FONT_FAMILY, 8), bg=ACCENT_RED, fg="white", cursor="hand2", relief="flat", command=_trash_local)
-                btn_trash.pack(side="right", padx=5)
+        if not self._pending_pairs:
+            self._update_status("Found duplicates in Immich, but none mapped to local files.")
+            messagebox.showinfo("No Local Files", "Could not find any local matching files for the duplicates.")
+            return
+
+        self._update_status(f"Loaded {len(self._pending_pairs)} duplicate pair(s) from Immich.")
+        self._switch_mode("duplicates")
+        self._load_next_pair()
 
     # ── 1. Asset Info & Metadata Sub-Tab ─────────────────────────────
     def _build_immich_sub_asset_info(self, parent: tk.Frame):
