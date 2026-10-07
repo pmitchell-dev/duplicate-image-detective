@@ -3163,8 +3163,7 @@ class PicCuratorStudioApp(tk.Tk):
             "🔍 Find Duplicates & Open Scanner",
             self._on_immich_get_duplicates,
             fg=BG_DARK,
-            bg=ACCENT_BLUE,
-            font=(FONT_FAMILY, 11, "bold")
+            bg=ACCENT_BLUE
         )
         self.btn_immich_get_dupes.pack(anchor="w")
 
