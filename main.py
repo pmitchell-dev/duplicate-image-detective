@@ -39,6 +39,7 @@ from scanner import (
     immich_smart_search,
     immich_download_thumbnail,
     immich_upload_asset,
+    immich_get_duplicates,
 )
 
 
@@ -2327,6 +2328,9 @@ class PicCuratorStudioApp(tk.Tk):
         btn_selall = self._make_button(top_bar, "Select All (Ctrl+A)", self._me_select_all, fg=TEXT_MAIN, bg=BG_CARD)
         btn_selall.pack(side="right", padx=4)
 
+        btn_untagged = self._make_button(top_bar, "🏷️ Show Untagged", self._me_show_untagged, fg=BG_DARK, bg=ACCENT_AMBER)
+        btn_untagged.pack(side="right", padx=10)
+
         # Main Grid Area (Thumbnail Grid + Mass Sidebar)
         content = tk.Frame(parent, bg=BG_DARK)
         content.pack(fill="both", expand=True)
@@ -2729,6 +2733,23 @@ class PicCuratorStudioApp(tk.Tk):
         self._me_update_tile_selection_styles()
         self._me_refresh_sidebar_ui()
 
+    def _me_show_untagged(self):
+        if not hasattr(self, "_me_all_images"):
+            return
+            
+        untagged_paths = []
+        for p in self._me_all_images:
+            tags = read_image_tags(p)
+            if not tags:
+                untagged_paths.append(p)
+                
+        self._me_active_images = untagged_paths
+        self._me_selected_indices.clear()
+        self._me_last_clicked_index = None
+        self._combo_me_folders.set("Untagged Images Only")
+        self._me_render_grid()
+        self._update_status(f"Found {len(untagged_paths)} untagged images.")
+
     def _me_update_tile_selection_styles(self):
         """Update tile colors and borders dynamically without full grid rebuild."""
         for i, item in enumerate(self._me_tile_widgets):
@@ -3058,6 +3079,7 @@ class PicCuratorStudioApp(tk.Tk):
             ("upload", "📤 Upload Image"),
             ("people", "👤 Face & People Finder"),
             ("smart_search", "✨ AI Smart Search"),
+            ("duplicates", "👯 Immich Duplicates"),
         ]
 
         for mode_key, mode_label in modes:
@@ -3102,6 +3124,11 @@ class PicCuratorStudioApp(tk.Tk):
         self._immich_sub_frames["smart_search"] = f_smart
         self._build_immich_sub_smart_search(f_smart)
 
+        # 6. Duplicates Finder Frame
+        f_dupes = tk.Frame(self._immich_sub_container, bg=BG_DARK)
+        self._immich_sub_frames["duplicates"] = f_dupes
+        self._build_immich_sub_duplicates(f_dupes)
+
         # Default sub-mode
         self._switch_immich_sub_mode("asset_info")
 
@@ -3117,6 +3144,134 @@ class PicCuratorStudioApp(tk.Tk):
                 frame.pack(fill="both", expand=True)
             else:
                 frame.pack_forget()
+
+    def _build_immich_sub_duplicates(self, parent: tk.Frame):
+        body = tk.Frame(parent, bg=BG_DARK)
+        body.pack(fill="both", expand=True)
+
+        # Header and button
+        hdr_frame = tk.Frame(body, bg=BG_DARK)
+        hdr_frame.pack(fill="x", padx=10, pady=(0, 10))
+
+        tk.Label(
+            hdr_frame,
+            text="Query Immich for duplicate asset groups.",
+            font=(FONT_FAMILY, 9),
+            bg=BG_DARK,
+            fg=TEXT_MAIN,
+        ).pack(side="left")
+
+        self.btn_immich_get_dupes = self._make_button(
+            hdr_frame,
+            "🔍 Find Duplicates",
+            self._on_immich_get_duplicates,
+            fg=BG_DARK,
+            bg=ACCENT_BLUE,
+        )
+        self.btn_immich_get_dupes.pack(side="right")
+
+        # Scrollable area
+        canvas = tk.Canvas(body, bg=BG_PANEL, highlightthickness=0)
+        scroll = ttk.Scrollbar(body, orient="vertical", command=canvas.yview)
+        
+        self.frame_immich_dupes_container = tk.Frame(canvas, bg=BG_PANEL, padx=10, pady=10)
+        self.frame_immich_dupes_container.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        
+        canvas_win = canvas.create_window((0, 0), window=self.frame_immich_dupes_container, anchor="nw")
+        canvas.bind("<Configure>", lambda e: canvas.itemconfig(canvas_win, width=e.width))
+        canvas.configure(yscrollcommand=scroll.set)
+        
+        canvas.pack(side="left", fill="both", expand=True, padx=(10, 0))
+        scroll.pack(side="right", fill="y", padx=(0, 10))
+
+    def _on_immich_get_duplicates(self):
+        url = self.var_immich_url.get().strip()
+        key = self.var_immich_key.get().strip()
+        if not url or not key:
+            self._update_status("Immich URL and API Key are required.")
+            return
+
+        self._update_status("Querying Immich for duplicates...")
+        self.btn_immich_get_dupes.config(state="disabled")
+        
+        for w in self.frame_immich_dupes_container.winfo_children():
+            w.destroy()
+
+        def _bg():
+            ok, res = immich_get_duplicates(url, key)
+            self.after(0, self._on_immich_duplicates_result, ok, res)
+
+        threading.Thread(target=_bg, daemon=True).start()
+
+    def _on_immich_duplicates_result(self, ok, res):
+        self.btn_immich_get_dupes.config(state="normal")
+        if not ok:
+            self._update_status(f"Duplicate fetch failed: {res}")
+            return
+
+        if not res:
+            self._update_status("No duplicates found in Immich.")
+            tk.Label(
+                self.frame_immich_dupes_container,
+                text="No duplicates found.",
+                font=(FONT_FAMILY, 10, "bold"),
+                bg=BG_PANEL,
+                fg=ACCENT_GREEN
+            ).pack(pady=20)
+            return
+
+        self._update_status(f"Found {len(res)} duplicate groups.")
+        
+        for i, group in enumerate(res):
+            assets = group.get("assets", [])
+            if len(assets) < 2:
+                continue
+
+            grp_frame = tk.Frame(self.frame_immich_dupes_container, bg=BG_CARD, padx=10, pady=10)
+            grp_frame.pack(fill="x", pady=5)
+            
+            tk.Label(
+                grp_frame,
+                text=f"Duplicate Group {i+1} ({len(assets)} assets)",
+                font=(FONT_FAMILY, 10, "bold"),
+                bg=BG_CARD,
+                fg=ACCENT_AMBER
+            ).pack(anchor="w", pady=(0, 5))
+            
+            for asset in assets:
+                orig_path = asset.get("originalPath", "Unknown Path")
+                
+                row = tk.Frame(grp_frame, bg=BG_CARD)
+                row.pack(fill="x", pady=2)
+                
+                tk.Label(row, text=orig_path, font=(FONT_FAMILY, 8), bg=BG_CARD, fg=TEXT_MAIN).pack(side="left", fill="x", expand=True)
+                
+                def _trash_local(p=orig_path, r=row):
+                    local_base = self.var_immich_local_path.get().strip()
+                    srv_prefix = self.var_immich_server_prefix.get().strip()
+                    
+                    target_path = p
+                    if local_base and srv_prefix and p.startswith(srv_prefix):
+                        target_path = p.replace(srv_prefix, local_base, 1)
+                        
+                    target_path = target_path.replace("/", "\\") if os.name == "nt" else target_path
+                    
+                    if os.path.exists(target_path):
+                        try:
+                            from pathlib import Path
+                            if send_to_trash(Path(target_path)):
+                                self._update_status(f"Trashed: {target_path}")
+                                r.destroy()
+                            else:
+                                self._update_status(f"Failed to trash: {target_path}")
+                        except Exception as e:
+                            self._update_status(f"Error trashing {target_path}: {e}")
+                            messagebox.showerror("Trash Error", str(e))
+                    else:
+                        messagebox.showerror("Not Found", f"Local file not found:\\n{target_path}\\nMake sure your Server Prefix to Local Folder mapping is correct.")
+
+                btn_trash = tk.Button(row, text="🗑️ Trash Local", font=(FONT_FAMILY, 8), bg=ACCENT_RED, fg="white", cursor="hand2", relief="flat", command=_trash_local)
+                btn_trash.pack(side="right", padx=5)
 
     # ── 1. Asset Info & Metadata Sub-Tab ─────────────────────────────
     def _build_immich_sub_asset_info(self, parent: tk.Frame):

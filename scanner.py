@@ -450,6 +450,18 @@ def immich_get_people(server_url: str, api_key: str) -> tuple[bool, list[dict] |
                 return True, res["people"]
     return False, "Failed to retrieve people list from Immich."
 
+def immich_get_duplicates(server_url: str, api_key: str) -> tuple[bool, list[dict] | str]:
+    """Retrieve duplicate asset groups from Immich."""
+    endpoints = ["/duplicates"]
+    for ep in endpoints:
+        ok, status, res = immich_request(server_url, api_key, ep)
+        if ok:
+            if isinstance(res, list):
+                return True, res
+            elif isinstance(res, dict) and "duplicates" in res:
+                return True, res["duplicates"]
+    return False, "Failed to retrieve duplicates from Immich."
+
 
 def immich_get_person_assets(server_url: str, api_key: str, person_id: str) -> tuple[bool, list[dict] | str]:
     """Retrieve all assets associated with a specific person ID."""
