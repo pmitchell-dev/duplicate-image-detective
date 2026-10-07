@@ -1,5 +1,5 @@
 import React from 'react';
-import { Folder, Search } from 'lucide-react';
+import { Folder, Search, TagOff } from 'lucide-react';
 
 export default function MobileGrid({
   results,
@@ -14,6 +14,7 @@ export default function MobileGrid({
   query,
   setQuery,
   handleSmartSearch,
+  handleUntaggedSearch,
   logo
 }) {
   return (
@@ -68,6 +69,28 @@ export default function MobileGrid({
              </button>
            )}
         </form>
+
+        {/* Untagged Photos Button */}
+        <button 
+          onClick={handleUntaggedSearch}
+          disabled={loading}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: 'rgba(245, 158, 11, 0.2)',
+            color: '#fcd34d',
+            padding: '12px',
+            borderRadius: '16px',
+            border: '1px solid rgba(245, 158, 11, 0.3)',
+            fontSize: '16px',
+            fontWeight: '600',
+            opacity: loading ? 0.5 : 1
+          }}
+        >
+          <TagOff size={20} style={{ marginRight: '8px' }} />
+          Untagged Photos
+        </button>
 
         {/* Local Folder Dropdown */}
         <div style={{ 

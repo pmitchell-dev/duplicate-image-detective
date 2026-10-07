@@ -510,6 +510,39 @@ def trash_images(req: PathsAction):
             print(f"Error trashing {p}: {e}")
     return {"status": "success", "trashed_count": trashed}
 
+@app.get("/api/untagged/count")
+def get_untagged_count():
+    base_dir = "/mnt/backups/family_photos"
+    if not os.path.exists(base_dir):
+        return {"count": 0}
+        
+    count = 0
+    image_paths = scanner.collect_image_paths(base_dir)
+    for p in image_paths:
+        tags = scanner.read_image_tags(p)
+        if not tags:
+            count += 1
+    return {"count": count}
+
+@app.get("/api/untagged/images")
+def get_untagged_images():
+    base_dir = "/mnt/backups/family_photos"
+    if not os.path.exists(base_dir):
+        return {"assets": []}
+        
+    assets = []
+    image_paths = scanner.collect_image_paths(base_dir)
+    for p in image_paths:
+        tags = scanner.read_image_tags(p)
+        if not tags:
+            assets.append({
+                "id": str(p),
+                "originalFileName": os.path.basename(str(p)),
+                "originalPath": str(p),
+                "isLocal": True
+            })
+    return {"assets": sorted(assets, key=lambda x: x['originalFileName'])}
+
 # Serve React Frontend
 frontend_build_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "frontend", "dist")
 if os.path.exists(frontend_build_path):

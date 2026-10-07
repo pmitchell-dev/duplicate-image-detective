@@ -18,6 +18,7 @@ export default function MobileApp({
   query,
   setQuery,
   handleSmartSearch,
+  handleUntaggedSearch,
   logo
 }) {
   const [viewingIndex, setViewingIndex] = useState(-1);
@@ -51,6 +52,7 @@ export default function MobileApp({
       query={query}
       setQuery={setQuery}
       handleSmartSearch={handleSmartSearch}
+      handleUntaggedSearch={handleUntaggedSearch}
       logo={logo}
     />
   );

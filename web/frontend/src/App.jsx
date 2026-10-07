@@ -26,6 +26,24 @@ function CacheCounter() {
   );
 }
 
+function UntaggedCounter() {
+  const [count, setCount] = useState(null);
+  useEffect(() => {
+    const fetchCount = () => {
+      axios.get(`${API_BASE}/untagged/count`).then(res => setCount(res.data.count)).catch(() => {});
+    };
+    fetchCount();
+    const int = setInterval(fetchCount, 30000); // Check every 30s so we don't spam the disk
+    return () => clearInterval(int);
+  }, []);
+  if (count === null) return null; // Don't show until loaded
+  return (
+    <div style={{ position: 'fixed', top: 12, right: 12, background: 'rgba(0,0,0,0.8)', color: '#f59e0b', padding: '6px 10px', borderRadius: '8px', zIndex: 9999, fontSize: '13px', fontWeight: 'bold', border: '1px solid rgba(245,158,11,0.3)' }}>
+      Untagged: {count}
+    </div>
+  );
+}
+
 function App() {
   const isTouchDevice = useIsTouchDevice();
   const [serverUrl, setServerUrl] = useState(() => localStorage.getItem('pic_serverUrl') || '');
@@ -319,6 +337,22 @@ function App() {
     }
   };
 
+  const handleUntaggedSearch = async () => {
+    setLoading(true);
+    setError('');
+    setSelectedPaths(new Set());
+    try {
+      const response = await axios.get(`${API_BASE}/untagged/images`);
+      setResults(response.data.assets || []);
+      setMode('smart'); // Switch mode so it displays properly
+    } catch (err) {
+      setError(err.response?.data?.detail || err.message);
+      setResults([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleAutoSplit = async () => {
     if (!viewingAsset) return;
     setIsProcessing(true);
@@ -565,9 +599,11 @@ function App() {
         query={query}
         setQuery={setQuery}
         handleSmartSearch={handleSmartSearch}
+        handleUntaggedSearch={handleUntaggedSearch}
         logo={logo}
       />
       <CacheCounter />
+      <UntaggedCounter />
     </>
   );
 }
