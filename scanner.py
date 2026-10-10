@@ -902,12 +902,12 @@ def immich_upload_asset(server_url: str, api_key: str, file_path: str) -> tuple[
 def get_exiftool_metadata(path: str):
     try:
         res = subprocess.run(
-            ["exiftool", "-json", "-UserComment", "-XPComment", "-Description", "-Caption-Abstract", "-ModifyDate", "-DateTimeOriginal", "-CreateDate", "-DateCreated", "-XPKeywords", "-Subject", "-HierarchicalSubject", "-TagsList", path],
+            ["exiftool", "-json", "-UserComment", "-XPComment", "-Description", "-ImageDescription", "-Caption-Abstract", "-ModifyDate", "-DateTimeOriginal", "-CreateDate", "-DateCreated", "-XPKeywords", "-Subject", "-HierarchicalSubject", "-TagsList", path],
             capture_output=True, text=True, check=True
         )
         data = json.loads(res.stdout)[0]
         
-        description = data.get("UserComment") or data.get("XPComment") or data.get("Description") or data.get("Caption-Abstract") or ""
+        description = data.get("UserComment") or data.get("XPComment") or data.get("Description") or data.get("ImageDescription") or data.get("Caption-Abstract") or ""
         date = data.get("DateTimeOriginal") or data.get("CreateDate") or data.get("ModifyDate") or data.get("DateCreated") or ""
         
         tags = set()
@@ -922,6 +922,7 @@ def get_exiftool_metadata(path: str):
         filtered_tags = sorted([t for t in tags if t != description and t != ""])
         return {"tags": filtered_tags, "description": str(description).strip(), "date": str(date).strip()}
     except Exception as e:
+        print(f"ExifTool extraction failed for {path}: {e}")
         return None
 
 def write_exiftool_metadata(path: str, raw_tags: list[str], description: str, date: str):
@@ -994,6 +995,16 @@ def read_image_metadata(path: Path) -> dict:
 
             exif = img.getexif()
             exif_ifd = exif.get_ifd(EXIF_IFD_POINTER)
+            
+            # TIFF fallback
+            if hasattr(img, 'tag_v2') and img.format in ['TIFF', 'TIF']:
+                for k, v in img.tag_v2.items():
+                    if k not in exif:
+                        exif[k] = v[0] if isinstance(v, tuple) and len(v) == 1 else v
+                    # Many TIFFs store ExifIFD tags directly in the main IFD
+                    if k not in exif_ifd and k in [TAG_DATETIME_ORIGINAL, TAG_CREATE_DATE, TAG_USER_COMMENT]:
+                        exif_ifd[k] = v[0] if isinstance(v, tuple) and len(v) == 1 else v
+
             
             if not description:
                 raw_xp_comment = exif.get(TAG_XP_COMMENT)
