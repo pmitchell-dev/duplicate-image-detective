@@ -7,6 +7,8 @@ they differ in file format, compression, or metadata.
 from __future__ import annotations
 
 import os
+import subprocess
+import json
 import queue
 import re
 import threading
@@ -896,9 +898,80 @@ def immich_upload_asset(server_url: str, api_key: str, file_path: str) -> tuple[
 
 
 
+
+def get_exiftool_metadata(path: str):
+    try:
+        res = subprocess.run(
+            ["exiftool", "-json", "-UserComment", "-XPComment", "-Description", "-Caption-Abstract", "-ModifyDate", "-DateTimeOriginal", "-CreateDate", "-DateCreated", "-XPKeywords", "-Subject", "-HierarchicalSubject", "-TagsList", path],
+            capture_output=True, text=True, check=True
+        )
+        data = json.loads(res.stdout)[0]
+        
+        description = data.get("UserComment") or data.get("XPComment") or data.get("Description") or data.get("Caption-Abstract") or ""
+        date = data.get("DateTimeOriginal") or data.get("CreateDate") or data.get("ModifyDate") or data.get("DateCreated") or ""
+        
+        tags = set()
+        for k in ["XPKeywords", "Subject", "HierarchicalSubject", "TagsList"]:
+            v = data.get(k)
+            if v:
+                if isinstance(v, list):
+                    for t in v: tags.add(str(t).strip())
+                elif isinstance(v, str):
+                    for t in v.split(";"): tags.add(t.strip())
+        
+        filtered_tags = sorted([t for t in tags if t != description and t != ""])
+        return {"tags": filtered_tags, "description": str(description).strip(), "date": str(date).strip()}
+    except Exception as e:
+        return None
+
+def write_exiftool_metadata(path: str, raw_tags: list[str], description: str, date: str):
+    try:
+        cmd = ["exiftool", "-overwrite_original", "-charset", "filename=utf8"]
+        if description:
+            cmd.extend([f"-UserComment={description}", f"-XPComment={description}", f"-Description={description}", f"-Caption-Abstract={description}"])
+        else:
+            cmd.extend(["-UserComment=", "-XPComment=", "-Description=", "-Caption-Abstract="])
+            
+        if date:
+            cmd.extend([f"-ModifyDate={date}", f"-DateTimeOriginal={date}", f"-CreateDate={date}", f"-DateCreated={date}"])
+        else:
+            cmd.extend(["-ModifyDate=", "-DateTimeOriginal=", "-CreateDate=", "-DateCreated="])
+            
+        cmd.extend(["-XPKeywords=", "-Subject=", "-HierarchicalSubject=", "-TagsList="])
+        if raw_tags:
+            flat_list = []
+            hier_list = []
+            seen_h, seen_f = set(), set()
+            for t in raw_tags:
+                h, f = parse_tag(t)
+                if h and h not in seen_h:
+                    seen_h.add(h)
+                    hier_list.append(h)
+                if f and f not in seen_f:
+                    seen_f.add(f)
+                    flat_list.append(f)
+            
+            cmd.append(f"-XPKeywords={'; '.join(flat_list)}")
+            for t in flat_list:
+                cmd.append(f"-Subject={t}")
+            for t in hier_list:
+                cmd.append(f"-HierarchicalSubject={t}")
+                cmd.append(f"-TagsList={t}")
+                
+        cmd.append(path)
+        subprocess.run(cmd, capture_output=True, check=True)
+        return True
+    except Exception as e:
+        return False
+
 def read_image_metadata(path: Path) -> dict:
     metadata = {"tags": [], "description": "", "date": ""}
     if not path.exists(): return metadata
+    
+    exif_data = get_exiftool_metadata(str(path))
+    if exif_data is not None:
+        return exif_data
+
     tags = set()
     description = ""
     date = ""
@@ -1085,6 +1158,10 @@ def read_image_metadata(path: Path) -> dict:
 
 def write_image_metadata(path: Path, raw_tags: list[str], description: str = "", date: str = "") -> bool:
     if not path.exists(): return False
+    
+    if write_exiftool_metadata(str(path), raw_tags, description, date):
+        return True
+
     hierarchical_list, flat_list, seen_h, seen_f = [], [], set(), set()
     for t in raw_tags:
         h, f = parse_tag(t)

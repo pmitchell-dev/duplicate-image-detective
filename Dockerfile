@@ -14,6 +14,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     libglib2.0-0 \
+    libimage-exiftool-perl \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies
