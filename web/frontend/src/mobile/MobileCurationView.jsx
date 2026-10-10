@@ -263,38 +263,75 @@ export default function MobileCurationView({
           </motion.div>
         </AnimatePresence>
 
-        {/* Floating Applied Tags Overlay */}
+        {/* Floating Overlay for Metadata and Tags */}
         <div style={{ 
           position: 'absolute', 
           bottom: '24px', 
           left: '16px', 
           right: '16px',
           display: 'flex',
-          flexWrap: 'wrap',
-          gap: '8px',
+          flexDirection: 'column',
+          gap: '12px',
           zIndex: 5,
           pointerEvents: 'none' // Let swipes pass through to the image
         }}>
-          {viewerTags.map(tag => (
+          
+          {/* Read-Only Metadata Display */}
+          {(viewerDate || viewerDescription) && (
             <motion.div 
-              key={tag}
-              initial={{ opacity: 0, scale: 0.8 }}
-              animate={{ opacity: 1, scale: 1 }}
-              style={{ 
-                padding: '6px 14px', 
-                backgroundColor: 'rgba(0,0,0,0.65)', 
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              style={{
+                backgroundColor: 'rgba(0,0,0,0.65)',
                 backdropFilter: 'blur(4px)',
-                color: 'white', 
-                borderRadius: '16px', 
-                fontSize: '13px', 
-                fontWeight: '600',
+                borderRadius: '16px',
+                padding: '12px 16px',
                 border: '1px solid rgba(255,255,255,0.2)',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
+                boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+                color: 'white',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '4px'
               }}
             >
-              {tag}
+              {viewerDate && (
+                <div style={{ fontSize: '12px', color: '#94a3b8', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                  {viewerDate}
+                </div>
+              )}
+              {viewerDescription && (
+                <div style={{ fontSize: '14px', lineHeight: '1.4' }}>
+                  {viewerDescription}
+                </div>
+              )}
             </motion.div>
-          ))}
+          )}
+
+          {/* Tags */}
+          {viewerTags.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+              {viewerTags.map(tag => (
+                <motion.div 
+                  key={tag}
+                  initial={{ opacity: 0, scale: 0.8 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  style={{ 
+                    padding: '6px 14px', 
+                    backgroundColor: 'rgba(0,0,0,0.65)', 
+                    backdropFilter: 'blur(4px)',
+                    color: 'white', 
+                    borderRadius: '16px', 
+                    fontSize: '13px', 
+                    fontWeight: '600',
+                    border: '1px solid rgba(255,255,255,0.2)',
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
+                  }}
+                >
+                  {tag}
+                </motion.div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
