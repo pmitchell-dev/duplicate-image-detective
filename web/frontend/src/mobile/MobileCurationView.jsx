@@ -19,6 +19,9 @@ export default function MobileCurationView({
   const [direction, setDirection] = useState(0);
   const [isProcessing, setIsProcessing] = useState(false);
   const [viewerTags, setViewerTags] = useState([]);
+  const [viewerDescription, setViewerDescription] = useState("");
+  const [viewerDate, setViewerDate] = useState("");
+  const [metadataModified, setMetadataModified] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [newTagInput, setNewTagInput] = useState("");
   const [sessionCustomTags, setSessionCustomTags] = useState([]);
@@ -84,6 +87,24 @@ export default function MobileCurationView({
       setResults(results.map((r, i) => i === index ? {...r, rotated: Date.now()} : r));
     } catch (err) {
       alert(`Rotate failed: ${err.message}`);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleSaveMetadata = async () => {
+    if (!currentAsset || isProcessing) return;
+    setIsProcessing(true);
+    try {
+      await axios.post(`${API_BASE}/tags`, {
+        paths: [currentAsset.originalPath],
+        description: viewerDescription,
+        date: viewerDate
+      });
+      setMetadataModified(false);
+    } catch (err) {
+      console.error(err);
+      alert(`Metadata save failed: ${err.message}`);
     } finally {
       setIsProcessing(false);
     }
@@ -453,8 +474,71 @@ export default function MobileCurationView({
                     </div>
                   </div>
                 ))}
-              </div>
-            </motion.div>
+
+                {/* Metadata Editor Section */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '16px', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '20px' }}>
+                  <h4 style={{ margin: 0, color: '#94a3b8', fontSize: '13px', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 'bold' }}>Metadata</h4>
+                  
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <label style={{ color: '#cbd5e1', fontSize: '14px' }}>Date</label>
+                    <input 
+                      type="text" 
+                      value={viewerDate}
+                      onChange={(e) => { setViewerDate(e.target.value); setMetadataModified(true); }}
+                      placeholder="YYYY or YYYY:MM:DD HH:MM:SS"
+                      style={{
+                        padding: '12px 16px',
+                        borderRadius: '12px',
+                        backgroundColor: 'rgba(255,255,255,0.05)',
+                        border: '1px solid rgba(255,255,255,0.1)',
+                        color: 'white',
+                        fontSize: '15px',
+                        outline: 'none'
+                      }}
+                    />
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <label style={{ color: '#cbd5e1', fontSize: '14px' }}>Description / Notes</label>
+                    <textarea 
+                      value={viewerDescription}
+                      onChange={(e) => { setViewerDescription(e.target.value); setMetadataModified(true); }}
+                      placeholder="Add a description..."
+                      rows={3}
+                      style={{
+                        padding: '12px 16px',
+                        borderRadius: '12px',
+                        backgroundColor: 'rgba(255,255,255,0.05)',
+                        border: '1px solid rgba(255,255,255,0.1)',
+                        color: 'white',
+                        fontSize: '15px',
+                        outline: 'none',
+                        resize: 'vertical'
+                      }}
+                    />
+                  </div>
+
+                  {metadataModified && (
+                    <button
+                      onClick={handleSaveMetadata}
+                      disabled={isProcessing}
+                      style={{
+                        marginTop: '8px',
+                        padding: '12px 16px',
+                        borderRadius: '12px',
+                        backgroundColor: '#10b981',
+                        color: 'white',
+                        border: 'none',
+                        fontWeight: 'bold',
+                        fontSize: '15px',
+                        opacity: isProcessing ? 0.7 : 1,
+                        cursor: isProcessing ? 'not-allowed' : 'pointer'
+                      }}
+                    >
+                      Save Metadata
+                    </button>
+                  )}
+                </div>              </div>            </motion.div>
           </>
         )}
       </AnimatePresence>

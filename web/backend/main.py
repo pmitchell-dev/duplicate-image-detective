@@ -49,8 +49,10 @@ class PersonAssetsQuery(BaseQuery):
 
 class TagAction(BaseModel):
     paths: list[str]
-    tag: str
-    action: str # "add" or "remove"
+    tag: str = ""
+    action: str = ""
+    description: str = None
+    date: str = None
 
 class PathsAction(BaseModel):
     paths: list[str]
@@ -322,15 +324,20 @@ def get_cache_size():
                     total_size += os.path.getsize(fp)
     return {"size_bytes": total_size}
 
-@app.get("/api/tags")
-def get_tags(path: str):
+@app.get("/api/metadata")
+def get_metadata(path: str):
     if not os.path.exists(path):
         raise HTTPException(status_code=404, detail="File not found")
     try:
-        tags = scanner.read_image_tags(Path(path))
-        return {"status": "success", "tags": tags}
+        meta = scanner.read_image_metadata(Path(path))
+        return {"status": "success", **meta}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+        
+@app.get("/api/tags")
+def get_tags(path: str):
+    # Fallback to metadata
+    return get_metadata(path)
 
 TAG_FILE_PATH = "/mnt/backups/piccurator/tags.json"
 DEFAULT_TAGS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "default_tags.json")
@@ -442,28 +449,22 @@ def merge_tags(req: TagMergeAction):
 @app.post("/api/tags")
 def manage_tags(req: TagAction):
     count = 0
-    cleaned = req.tag.strip()
-    if not cleaned:
-        raise HTTPException(status_code=400, detail="Empty tag")
-
     for p in req.paths:
-        path_obj = Path(p)
-        tags = scanner.read_image_tags(path_obj)
-        modified = False
-
-        if req.action == "add":
-            if cleaned not in tags:
-                tags.append(cleaned)
-                modified = True
-        elif req.action == "remove":
-            if cleaned in tags:
-                tags.remove(cleaned)
-                modified = True
-
-        if modified:
-            if scanner.write_image_tags(path_obj, tags):
+        if os.path.exists(p):
+            meta = scanner.read_image_metadata(Path(p))
+            tags = meta['tags']
+            description = req.description if req.description is not None else meta['description']
+            date = req.date if req.date is not None else meta['date']
+            
+            if req.tag and req.action:
+                tag = req.tag.strip()
+                if req.action == 'add' and tag not in tags:
+                    tags.append(tag)
+                elif req.action == 'remove' and tag in tags:
+                    tags.remove(tag)
+                    
+            if scanner.write_image_metadata(Path(p), tags, description, date):
                 count += 1
-
     return {"status": "success", "modified_count": count}
 
 @app.post("/api/rotate")
