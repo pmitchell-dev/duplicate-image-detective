@@ -36,13 +36,20 @@ export default function MobileCurationView({
     return [...new Set(tags)];
   }, [globalTags]);
 
-  // Load tags for the current image
+  // Load tags and metadata for the current image
   useEffect(() => {
     if (currentAsset && currentAsset.originalPath) {
       setViewerTags([]); // clear while loading
-      axios.get(`${API_BASE}/tags?path=${encodeURIComponent(currentAsset.originalPath)}`)
-        .then(res => setViewerTags(res.data.tags || []))
-        .catch(err => console.error("Failed to load tags", err));
+      setViewerDescription("");
+      setViewerDate("");
+      setMetadataModified(false);
+      axios.get(`${API_BASE}/metadata?path=${encodeURIComponent(currentAsset.originalPath)}`)
+        .then(res => {
+            setViewerTags(res.data.tags || []);
+            setViewerDescription(res.data.description || "");
+            setViewerDate(res.data.date || "");
+        })
+        .catch(err => console.error("Failed to load metadata", err));
     }
   }, [currentAsset]);
 
